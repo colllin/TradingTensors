@@ -22,7 +22,7 @@ class OandaEnv(BaseEnv):
         self.api_Handle = OandaHandler(granularity, mode)
         PRECISION = self.api_Handle.get_instrument_precision(INSTRUMENT)
 
-        self.sim = OandaSim(
+        self.simulator = OandaSimulator(
             handle=self.api_Handle, SYMBOL=INSTRUMENT,
             _isLive=_isLive, other_pairs=additional_pairs,
             lookback=lookback_period,
@@ -43,20 +43,20 @@ class OandaEnv(BaseEnv):
 
         self.SYMBOL = INSTRUMENT
         self.action_space = 3
-        self.observation_space = self.sim.states_dim
+        self.observation_space = self.simulator.states_dim
 
 
     def step(self, action):
-        new_obs, portfolio_feed, DONE = self.sim.step()
-        ACTION, REWARD = self.portfolio.newCandleHandler(
+        new_obs, portfolio_feed, done = self.simulator.step()
+        ACTION, reward = self.portfolio.newCandleHandler(
             ACTION=action, TIME=portfolio_feed[0],
             OPEN=portfolio_feed[1], REWARD=portfolio_feed[2])
 
-        return new_obs, ACTION, REWARD, DONE
+        return new_obs, ACTION, reward, done
 
     def reset(self, TRAIN):
         self.isTraining = TRAIN
-        observation = self.sim.reset()
+        observation = self.simulator.reset()
         self.portfolio.reset()
 
         return observation
@@ -98,7 +98,7 @@ class OandaEnv(BaseEnv):
 
 
 
-class OandaSim(BaseSimulator):
+class OandaSimulator(BaseSimulator):
 
     def __init__(self, **kwargs):
 

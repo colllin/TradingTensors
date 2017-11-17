@@ -99,7 +99,7 @@ class DQNAgent():
         for dir_ in os.listdir(self.directory):
             os.remove(os.path.join(self.directory, dir_))
 
-        steps_per_episode = self.env.sim.train_end_idx - self.env.sim.train_start_idx - 2
+        steps_per_episode = self.env.simulator.train_end_idx - self.env.simulator.train_start_idx - 2
 
         #Create a Transition memory storage
         replaybuffer = ReplayBuffer(steps_per_episode * train_episodes * 1.2)
@@ -177,8 +177,8 @@ class DQNAgent():
 
                         #Close the Last Trade in portfolio if any
                         if self.env.portfolio.isHoldingTrade():
-                            lastTime = self.env.sim.data.index[self.env.sim.curr_idx].to_pydatetime()
-                            lastOpen = self.env.sim.data['Open'].iloc[self.env.sim.curr_idx]
+                            lastTime = self.env.simulator.data.index[self.env.simulator.curr_idx].to_pydatetime()
+                            lastOpen = self.env.simulator.data['Open'].iloc[self.env.simulator.curr_idx]
                             self.env.portfolio.closeTrade(TIME=lastTime, OPEN=lastOpen)
 
 
@@ -307,7 +307,7 @@ class DQNAgent():
         print ("Average Trade Duration  | %.2f"%(duration))
 
         #print candle_stick
-        ohlcPlot(self.journal_record[index], self.env.sim.data, self.equity_curve_record[index])
+        ohlcPlot(self.journal_record[index], self.env.simulator.data, self.equity_curve_record[index])
 
 
 
@@ -402,7 +402,7 @@ class DQNAgent():
                 continue
 
             print ("Processing New Candle")
-            data, states = self.env.sim.build_data_and_states(HISTORY)
+            data, states = self.env.simulator.build_data_and_states(HISTORY)
 
             action = self.choose_action(
                 states[-1], #Latest state
