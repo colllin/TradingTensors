@@ -301,7 +301,7 @@ class Portfolio():
 
 
     def openTrade(self, action, **kwargs):
-
+        self.total_trades += 1
         if self.isLive:
 
             TYPE = 'BUY' if action == 0 else 'SELL'
@@ -316,15 +316,8 @@ class Portfolio():
             self.curr_trade['Entry Price'] = PRICE
             self.curr_trade['ID'] = ID
             self.curr_trade['Type'] = TYPE
-
-            self.total_trades += 1
-
-
         else:
-
             #Train/Test Mode
-            self.total_trades += 1
-
             #Set cur_trade
             self.curr_trade['ID'] = self.total_trades
             TYPE = 'BUY' if action == 0 else 'SELL'
