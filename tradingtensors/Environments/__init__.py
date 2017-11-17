@@ -1,1 +1,1 @@
-from . import CustomEnvs, BaseClass
+from . import CustomEnvs
