@@ -19,9 +19,8 @@ class LearningAgent(object):
     '''Parent Class of Learning Agents
     '''
 
-    def __init__(self, env, IDENTITY):
+    def __init__(self, env):
         self.env = env
-        self.IDENTITY = IDENTITY
 
     def reset_bookkeeping_tools(self):
         #Book-keeping tools
@@ -33,16 +32,10 @@ class LearningAgent(object):
 
 class DQNAgent(LearningAgent):
 
-    def __init__(
-        self, env, PARENT_PATH
-        ):
+    def __init__(self, env, PARENT_PATH):
 
         #Base Learning Agent initialization
-        super().__init__(
-            env,
-            'Deep Q Network'
-        )
-
+        super().__init__(env)
 
         self.tensor_dir_template =None
         self.PARENT_PATH = PARENT_PATH

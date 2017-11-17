@@ -6,21 +6,18 @@ import pandas as pd
 from .BaseClass import BaseEnv, BasePortfolio, BaseSimulator
 from ..settings.serverconfig import GRANULARITIES, INDICATORS_SETTINGS, TF_IN_SECONDS, SYMBOL_HISTORY, TRAIN_SPLIT
 from ..functions.planetry_functions import get_planet_coordinates
-from ..functions.utils import OandaHandler, get_indicators, get_returns
+from ..functions.utils import OandaHandler
 
 
 class OandaEnv(BaseEnv):
 
     def __init__(self, INSTRUMENT, TIMEFRAME, train=True, _isLive=False,
-                 mode='practice', additional_pairs=[], indicators=[],
-                 trade_duration=1, lookback_period=0, 
-                 planet_data={}, PLANET_FORWARD_PERIOD=0, PORTFOLIO_TYPE='FIXED PERIOD'):
+                 mode='practice', additional_pairs=[],
+                 trade_duration=1, lookback_period=0,
+                 planet_data={}, PLANET_FORWARD_PERIOD=0):
 
-        assert TIMEFRAME in GRANULARITIES, "Please use this timeframe format {}".format(
-            GRANULARITIES)
+        assert TIMEFRAME in GRANULARITIES, "Please use this timeframe format {}".format(GRANULARITIES)
         assert '_' in INSTRUMENT, "Please define currency pair in this format XXX_XXX"
-        assert all([i in INDICATORS_SETTINGS.keys() for i in indicators]), \
-        "Please use these indicators keys {}".format(INDICATORS_SETTINGS.keys())
 
         self.api_Handle = OandaHandler(TIMEFRAME, mode)
         PRECISION = self.api_Handle.get_instrument_precision(INSTRUMENT)
@@ -28,19 +25,18 @@ class OandaEnv(BaseEnv):
         self.sim = OandaSim(
             handle=self.api_Handle, SYMBOL=INSTRUMENT,
             _isLive=_isLive, other_pairs=additional_pairs,
-            indicators=indicators, lookback=lookback_period,
+            lookback=lookback_period,
             train_split=TRAIN_SPLIT, _isTraining=train,
             PRECISION=PRECISION,
             # Planet Data for Mr Peter's version
             planet_data=planet_data, PLANET_PERIOD=PLANET_FORWARD_PERIOD
         )
 
-        if PORTFOLIO_TYPE == 'FIXED PERIOD':
-            self.portfolio = FixedPeriodPortfolio(
-                handle=self.api_Handle,
-                DURATION=trade_duration,
-                SYMBOL=INSTRUMENT,
-                PRECISION=PRECISION)
+        self.portfolio = FixedPeriodPortfolio(
+            handle=self.api_Handle,
+            DURATION=trade_duration,
+            SYMBOL=INSTRUMENT,
+            PRECISION=PRECISION)
 
         self.isTraining = train
         self.isLive = _isLive
@@ -53,7 +49,7 @@ class OandaEnv(BaseEnv):
     def step(self, action):
         new_obs, portfolio_feed, DONE = self.sim.step()
         ACTION, REWARD = self.portfolio.newCandleHandler(
-            ACTION=action, TIME=portfolio_feed[0], 
+            ACTION=action, TIME=portfolio_feed[0],
             OPEN=portfolio_feed[1], REWARD=portfolio_feed[2])
 
         return new_obs, ACTION, REWARD, DONE
@@ -70,7 +66,7 @@ class OandaEnv(BaseEnv):
     '''
     def setLive(self):
         self.isLive = True
-        self.lastRecordedTime = None 
+        self.lastRecordedTime = None
 
     def candleListener(self, events):
         '''
@@ -81,7 +77,7 @@ class OandaEnv(BaseEnv):
         self.ListenerIsAlive = True
 
         while True:
-            
+
             #Get the latest Candle Time
             latestTime = self.api_Handle.getLatestTime(self.SYMBOL)
 
@@ -101,7 +97,7 @@ class OandaEnv(BaseEnv):
                 time.sleep(300)
 
 
-        
+
 class OandaSim(BaseSimulator):
 
     def __init__(self, **kwargs):
@@ -112,10 +108,9 @@ class OandaSim(BaseSimulator):
 
         # Attributes to create state space
         self.other_pairs = kwargs['other_pairs']  # List of other pairs
-        self.indicators = kwargs['indicators']
         self.LOOKBACK = kwargs['lookback']  # how many periods to lookback
         self.planet_args = [kwargs['planet_data'], kwargs['PLANET_PERIOD']]
-        
+
 
         # Attributes for training model
         # Percentage of data to be used for training, to be used in
@@ -125,13 +120,13 @@ class OandaSim(BaseSimulator):
 
         # Attributes to interact with live market
         self.isLive = kwargs['_isLive']  # Flag: if True, we are trading live
-        
+
 
         #For Normalization
         self.train_mean = None
         self.train_std = None
 
-        
+
         self.data, self.states = self.build_data_and_states(SYMBOL_HISTORY)
         self.states_dim = self.states.shape[1]
 
@@ -139,47 +134,35 @@ class OandaSim(BaseSimulator):
         self.Open = self.data.Open.values
         self.Dates = self.data.index.to_pydatetime().tolist()
 
-    
-        #Reward: (CLOSE - OPEN) / (0.0001) 
+
+        #Reward: (CLOSE - OPEN) / (0.0001)
         PRECISION = kwargs['PRECISION']
         reward_pips = (self.data['Close'] - self.data['Open']).values
-        self.reward_pips = reward_pips / PRECISION 
+        self.reward_pips = reward_pips / PRECISION
 
         self.define_boundaries()
         self.reset() #Reset to initialize curr_idx and end_idx
 
-    
+
     def build_data_and_states(self, HISTORY):
 
         # Pull primary symbol from Oanda API
         primary_data = self.api_Handle.get_history(self.SYMBOL, HISTORY)
-
         assert primary_data is not None, "primary_data is not DataFrame"
 
         states_df = pd.DataFrame(index=primary_data.index)
 
-        states_df['Returns'] = get_returns(primary_data)
-
-        # Compute Indicators
-        if len(self.indicators) > 0:
-            indie = get_indicators(primary_data, self.indicators)
-
-            states_df = states_df.join(indie)
+        states_df['Returns'] = primary_data['Open'].pct_change()
 
         #Get Return of additional pairs
         if len(self.other_pairs) > 0:
 
-            for sym in self.other_pairs:
-                _symbol_data = self.api_Handle.get_history(sym, HISTORY)
-                
-                assert _symbol_data is not None, "{} _symbol_data is not DataFrame"\
-                .format(sym)
-
-                _returns = get_returns(_symbol_data)
-                
+            for pair_name in self.other_pairs:
+                _symbol_data = self.api_Handle.get_history(pair_name, HISTORY)
+                assert _symbol_data is not None, "{} _symbol_data is not DataFrame".format(pair_name)
                 #Attach to primary data
-                states_df.loc[:, "%s_Returns"%sym] = _returns
-        
+                states_df.loc[:, "%s_Returns"%pair_name] = _symbol_data['Open'].pct_change()
+
         # Shift Data if there are any lookback period
         original = states_df.copy()
         if self.LOOKBACK > 0:
@@ -192,15 +175,15 @@ class OandaSim(BaseSimulator):
         if not (not self.planet_args[0]): #NOT Empty dictionary
             dates = primary_data.index.to_pydatetime().tolist()
             planet_data = get_planet_coordinates(dates, self.planet_args[0], self.planet_args[1])
-            
+
             states_df = states_df.join(planet_data)
 
         states_df.dropna(axis=0, how='any', inplace=True)
 
         primary_data = primary_data.loc[states_df.index.tolist(), :]
-        
+
         states = self.normalize_states(states_df.values)
-        
+
         return primary_data, states
 
     '''States Normalization'''
@@ -210,22 +193,22 @@ class OandaSim(BaseSimulator):
             self.train_mean = np.mean(states, 0)
             self.train_std = np.std(states, 0)
 
-        transformed = (states - self.train_mean)/self.train_std    
+        transformed = (states - self.train_mean)/self.train_std
 
         return transformed
 
     def step(self):
-        
+
         rew = self.reward_pips[self.curr_idx] #Current Reward: Current Close - Close Open
         THIS_OPEN = self.Open[self.curr_idx] #Current Open
         THIS_TIME = self.Dates[self.curr_idx]
 
         self.curr_idx += 1
         done = self.curr_idx >= self.end_idx
-        new_obs = self.states[self.curr_idx] #Next State 
+        new_obs = self.states[self.curr_idx] #Next State
 
         return new_obs, (THIS_TIME, THIS_OPEN, rew), done
-    
+
 
 
 class FixedPeriodPortfolio(BasePortfolio):
@@ -234,7 +217,7 @@ class FixedPeriodPortfolio(BasePortfolio):
     No StopLoss is required, trades are closed automatically once they reach the specified duration
     '''
     def __init__(self, **kwargs):
-        
+
         self.DURATION_LIMIT = kwargs['DURATION']
         self.api_Handle = kwargs['handle']
         self.SYMBOL = kwargs['SYMBOL']
@@ -246,7 +229,7 @@ class FixedPeriodPortfolio(BasePortfolio):
         '''
         In Live mode, step doesnt return anything
         IN Training/Testing mode, step returns action and reward
-        
+
         TRAIN/TEST MODE:
         kwargs = {
             'TIME' : curr_time,
@@ -273,13 +256,13 @@ class FixedPeriodPortfolio(BasePortfolio):
                 #Continue Holding
 
                 return self.continueHolding(**kwargs)
-        
+
         if ACTION == 2:
             # Do Nothing
             self.equity_curve.append(self.total_reward)
             REWARD = 0
             return ACTION, REWARD
-        
+
         else:
             #TAKE A TRADE
 
@@ -289,10 +272,10 @@ class FixedPeriodPortfolio(BasePortfolio):
     def openTrade(self, action, **kwargs):
 
         if self.isLive:
-            
+
             TYPE = 'BUY' if action == 0 else 'SELL'
             ID, TIME, PRICE = self.api_Handle.open_position(self.SYMBOL, TYPE)
-            
+
             if ID is None or TIME is None or PRICE is None:
                 #Raise Error
                 print ("Failed to initiate trade")
@@ -304,8 +287,8 @@ class FixedPeriodPortfolio(BasePortfolio):
             self.curr_trade['Type'] = TYPE
 
             self.total_trades += 1
-        
-            
+
+
         else:
 
             #Train/Test Mode
@@ -325,12 +308,12 @@ class FixedPeriodPortfolio(BasePortfolio):
             multiplier = 1.0 if self.curr_trade['Type'] == 'BUY' else -1.0
             REWARD = rew * multiplier
 
-           
+
             #Accumulate reward
             self.curr_trade['Profit'] += REWARD
             self.total_reward += REWARD
 
-            #Update Equity 
+            #Update Equity
             self.equity_curve.append(self.total_reward)
 
             self._isHoldingTrade = True
@@ -338,10 +321,10 @@ class FixedPeriodPortfolio(BasePortfolio):
 
 
     def closeTrade(self, **kwargs):
-        
+
 
         if self.isLive:
-            
+
             SYMBOL = self.curr_trade["Symbol"]
             TYPE = self.curr_trade['Type']
 
@@ -363,16 +346,16 @@ class FixedPeriodPortfolio(BasePortfolio):
 
             print (self.curr_trade)
             print ("")
-            
+
             #reset curr_trade
             self.reset_trade()
-        
+
         else:
 
             #Close the trade in Train/Test Mode
             self.curr_trade['Exit Time'] = kwargs['TIME']
             self.curr_trade['Exit Price'] = kwargs['OPEN']
-            
+
             #Recalculate reward based on this open (More accurate) thisOpen - EntryPrice
             #Or we could leave curr_trade['Profit'] = lastClose - EntryPrice
             '''
@@ -388,7 +371,7 @@ class FixedPeriodPortfolio(BasePortfolio):
     def isHoldingTrade(self):
 
         if self.isLive:
- 
+
             #curr_trade should have a record
             TRADE_ID = self.curr_trade["ID"]
 
@@ -396,43 +379,43 @@ class FixedPeriodPortfolio(BasePortfolio):
                 self._isHoldingTrade = False
             else:
                 self._isHoldingTrade = self.api_Handle.isTradeOpen(TRADE_ID)
-            
+
             return self._isHoldingTrade
-            
+
         else:
-            #Training/Testing 
+            #Training/Testing
             return self._isHoldingTrade
 
 
     def continueHolding(self, **kwargs):
 
         if self.isLive:
-            
-            
+
+
             ID = self.curr_trade['ID']
             SYMBOL = self.curr_trade['Symbol']
             pl = self.api_Handle.getOpenPL(ID, SYMBOL)
-            
+
             self.curr_trade['Profit'] = float(pl)/self.PRECISION
-            
+
             self.equity_curve.append(self.curr_trade['Profit'])
 
             return
-            
+
         else:
-            
+
             #Reset the action
             ACTION = 2
-            
+
             #Manipulate reward
             rew = kwargs['REWARD']
             multiplier = 1.0 if self.curr_trade['Type'] == 'BUY' else -1.0
             REWARD = rew * multiplier
 
-            #Accumulate reward 
+            #Accumulate reward
             self.total_reward += REWARD
-            self.curr_trade['Profit'] += REWARD            
-            
+            self.curr_trade['Profit'] += REWARD
+
 
             #Update Equity
             self.equity_curve.append(self.total_reward)

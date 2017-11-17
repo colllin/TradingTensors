@@ -7,7 +7,7 @@ import requests
 from requests.exceptions import RequestException
 from talib import ATR, BBANDS
 
-from ..settings.serverconfig import ID, INDICATORS_SETTINGS, RETURNS_BY_OPEN, TOKEN
+from ..settings.serverconfig import ID, TOKEN
 
 '''to access OANDA API'''
 
@@ -24,10 +24,8 @@ DEFAULT_HEADERS = {
 
 ############ OANDA REQUEST HANDLER ####################################
 class OandaHandler(object):
-    def __init__(
-        self, timeframe, mode='practice'
-        ):
-        
+    def __init__(self, timeframe, mode='practice'):
+
         '''
         Input query parameters for retrieve instrument history Oanda API:
         '''
@@ -36,26 +34,25 @@ class OandaHandler(object):
         self.DEFAULT_URL = DEFAULT_URL[mode]
 
 
-    def get_history(self, SYMBOL, HISTORY=5000, DT_FORMAT='RFC3339'):
+    def get_history(self, SYMBOL, HISTORY=5000):
         '''
         Retrieve history from Oanda
         return dataframe if success
         return None if failed
         '''
-        QUERY_URL = self.DEFAULT_URL + '/v3/instruments/{}/candles'\
-                    .format(SYMBOL)
+        QUERY_URL = self.DEFAULT_URL + '/v3/instruments/{}/candles'.format(SYMBOL)
 
         #Parameters required to retrieve history
         params = {
-          "count": HISTORY, 
+          "count": HISTORY,
           "granularity": self.TIMEFRAME,
           "price": "M"
         }
 
         #Headers
-        DEFAULT_HEADERS['Accept-Datetime-Format'] = DT_FORMAT
+        DEFAULT_HEADERS['Accept-Datetime-Format'] = 'RFC3339'
 
-        #Make API call repeated 
+        #Make API call repeated
         try:
             response = requests.get(QUERY_URL, headers=DEFAULT_HEADERS, params=params).json()
             received = response["candles"]
@@ -72,7 +69,7 @@ class OandaHandler(object):
             "Low" : [],
             "Close" : [],
             "Volume": [],
-            "Date_Time" : [],        
+            "Date_Time" : [],
         }
 
         for r in received:
@@ -82,8 +79,6 @@ class OandaHandler(object):
             data["Close"].append(float (r["mid"]["c"]))
             data["Volume"].append(float(r["volume"]) )
             data["Date_Time"].append(r["time"])
-            
-       
         #Convert the dictionary to pandas DataFrame:
         #Date_Time (index) | Open | High | Low | Close | Volume
         df = pd.DataFrame(data)
@@ -98,24 +93,24 @@ class OandaHandler(object):
     Get the Precision of the instrument
     '''
     def get_instrument_precision(self, INSTRUMENT):
-        
+
         QUERY_URL = self.DEFAULT_URL + '/v3/accounts/{}/instruments'.format(ID)
-        
+
         params = {
             'instruments': INSTRUMENT
         }
-        
+
         try:
             response = requests.get(QUERY_URL, headers=DEFAULT_HEADERS, params=params).json()
         except RequestException as e:
             print ("Error while retrieving instrument information: %s"%e)
             return None
-        
+
         pip_base = response['instruments'][0]['pipLocation']
- 
+
         return 10 ** pip_base
 
-    
+
     def get_open_trades(self):
 
         QUERY_URL = self.DEFAULT_URL + '/v3/accounts/{}/openTrades'.format(ID)
@@ -164,10 +159,10 @@ class OandaHandler(object):
         except RequestException as e:
             print ("Failed to complete {} order for {} units of {}".format(TYPE, abs(UNITS), INSTRUMENT))
             return None, None, None
-        
+
 
         #Request is not successful, return None
-        if response.status_code != 201: 
+        if response.status_code != 201:
             print (
                 "HTTP ERROR {}: Failed to complete {} order for {} units of {}".format(
                 response.status_code, TYPE, abs(UNITS), INSTRUMENT)
@@ -176,7 +171,7 @@ class OandaHandler(object):
 
 
         #Extract the response json for time and price
-        
+
         _json = response.json()
         try:
             transaction = _json["orderFillTransaction"]
@@ -188,7 +183,7 @@ class OandaHandler(object):
         entry_price = transaction['price']
         entry_time = transaction['time']
         tradeID = transaction['id']
-        
+
         ENTRY_TIME = pd.to_datetime(entry_time).strftime("%Y/%m/%d %H:%M")
         print("OANDA API: Successfully traded {} units of {} {}".format(UNITS, INSTRUMENT, ENTRY_TIME))
         return tradeID, entry_time, entry_price
@@ -197,7 +192,7 @@ class OandaHandler(object):
     Close Positions
     '''
     def closeALLposition(self, INSTRUMENT, ORDER_TYPE):
-        
+
         URL = self.DEFAULT_URL + '/v3/accounts/{}/positions/{}/close'.format(ID, INSTRUMENT)
 
         #Existing order is Long or Short
@@ -227,7 +222,7 @@ class OandaHandler(object):
 
         EXIT_TIME = pd.to_datetime(exit_time).strftime("%Y/%m/%d %H:%M")
         print ("OANDA API: Successfully closed ALL positions in {} {}".format(INSTRUMENT, EXIT_TIME))
-        
+
         return exit_time, exit_price, float(pl)
 
 
@@ -245,10 +240,10 @@ class OandaHandler(object):
         except RequestException as e:
             print (e)
             return False
-            
+
         response_json = response.json()
-        
-        try: 
+
+        try:
             open_trades = response_json['trade']
         except KeyError as e:
             print ("Trade Doesnt exist")
@@ -271,7 +266,7 @@ class OandaHandler(object):
         except RequestException as e:
             print (e)
             return False
-        
+
         response_json = response.json()
         try:
             trade= response_json['trade']
@@ -291,23 +286,23 @@ class OandaHandler(object):
 
 
 
-    def getLatestTime(self, SYMBOL, DT_FORMAT="RFC3339"):
+    def getLatestTime(self, SYMBOL):
 
         QUERY_URL = self.DEFAULT_URL + '/v3/instruments/{}/candles'\
                     .format(SYMBOL)
 
         params = {
-          "count": 1, 
+          "count": 1,
           "granularity": self.TIMEFRAME,
           "price": "M"
         }
 
-        DEFAULT_HEADERS['Accept-Datetime-Format'] = DT_FORMAT
+        DEFAULT_HEADERS['Accept-Datetime-Format'] = 'RFC3339'
 
         try:
             response = requests.get(
-                QUERY_URL, 
-                headers=DEFAULT_HEADERS, 
+                QUERY_URL,
+                headers=DEFAULT_HEADERS,
                 params=params)
 
         except RequestException as e:
@@ -319,68 +314,10 @@ class OandaHandler(object):
 
         return pd.to_datetime(_time).to_datetime()
 
-#TRADE HISTORY?
-        
-
-##############################################################################
-
-
-def get_indicators(data, indicator_list):
-    '''
-    Parameters:
-    data: pandas dataframe with 'Open', 'Close', 'High', Low'
-    indicator_list: list of string of indicators
-
-    Returns:
-    dataframe with indicator names
-    '''
-    shifted_data = data.loc[:, ['Open', 'Close', 'High', 'Low']].shift(1)
-
-    new_df = pd.DataFrame(index=shifted_data.index)
-
-    for ind in indicator_list:
-
-        period = INDICATORS_SETTINGS[ind]['period'] 
-        required_cols = INDICATORS_SETTINGS[ind]['requires']
-        matrix = shifted_data.loc[:, required_cols].values.transpose()
-        func = INDICATORS_SETTINGS[ind]['func'] #TALIB func, refer to config file
-        output_cols = INDICATORS_SETTINGS[ind]['output_name']
-
-        #Performs the function
-        output = func(*matrix, timeperiod=period)
-        
-        output = np.asarray(output)
-
-        if output.ndim == 1:
-            output =np.reshape(output, (1,-1))
-
-        for i, col in enumerate(output_cols):
-            new_df.loc[:, col] = output[i]
-
-    return new_df
 
 
 
-def get_returns(data):
-    if RETURNS_BY_OPEN:
-        # Compute by open prices
-        # looking at Open to Open Return instead
-        
-        return data['Open'].pct_change()
-    else:
-
-        # Compute by close prices
-        # Shift 1 period so that we have Close price one period before
-        shifted_close = data['Close'].shift(1)
-        return shifted_close.pct_change()
 
 
 
-###############################################################
-
-    
-    
-
-
-    
 
