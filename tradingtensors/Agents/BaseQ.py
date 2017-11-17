@@ -35,25 +35,29 @@ class DQN(object):
 
 
             #Difference between target_network and online network estimation
-            self.td_error = huber_loss(self.target_q_t - self.current_Q)
+            # huber_loss?
+            error = huber_loss(self.target_q_t - self.current_Q)
 
-            self.loss = tf.reduce_mean(self.td_error)
+            self.loss = tf.reduce_mean(error)
 
             #Dynamic Learning steps- decaying with episodes
             global_step = tf.Variable(0, trainable=False)
-            learner_decay = tf.train.exponential_decay(1e-3, global_step, 10000, 0.96, staircase=True)
-            self.trainer = tf.train.AdamOptimizer(learning_rate=learner_decay)
+            learning_rate = tf.train.exponential_decay(1e-3, global_step, 10000, 0.96, staircase=True)
+            self.trainer = tf.train.AdamOptimizer(learning_rate=learning_rate)
             self.optimize = self.trainer.minimize(self.loss, global_step=global_step)
             # create_optimizer end
 
             self.variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope)
 
     def build_q_network(self, hiddens):
-
         out = self._inputs
 
         for hidden in hiddens:
-            out= layers.fully_connected(inputs=out, num_outputs= hidden, activation_fn=tf.tanh, weights_regularizer=layers.l2_regularizer(scale=0.1))
+            out= layers.fully_connected(
+                inputs=out,
+                num_outputs= hidden,
+                activation_fn=tf.tanh,
+                weights_regularizer=layers.l2_regularizer(scale=0.1))
             out = tf.nn.dropout(out, self.dropout)
 
         self.Q_t = layers.fully_connected(out, self.num_actions, activation_fn=None)
@@ -124,8 +128,8 @@ class ReplayBuffer(object):
         self.capacity = capacity
         self.storage = []
 
-    def add(self, obs, action, reward, next_obs, terminal):
-        instance = (obs, action, reward, next_obs, terminal)
+    def add(self, observation, action, reward, next_observation, terminal):
+        instance = (observation, action, reward, next_observation, terminal)
 
         if len(self.storage) <= self.capacity:
             self.storage.append(instance)
@@ -137,37 +141,35 @@ class ReplayBuffer(object):
     def sample(self, n):
 
         #Select n indexes from storage
-        idx = np.random.choice(len(self.storage), size=n, replace=False)
+        index = np.random.choice(len(self.storage), size=n, replace=False)
 
-        obs, actions, rewards, next_obs, terminal = [], [], [], [], []
+        observation, actions, rewards, next_observation, terminal = [], [], [], [], []
 
         #Regroup every sample into different lists
-        for i in idx:
+        for i in index:
 
             _sample = self.storage[i]
 
-            obs.append(_sample[0])
+            observation.append(_sample[0])
             actions.append(_sample[1])
             rewards.append(_sample[2])
-            next_obs.append(_sample[3])
+            next_observation.append(_sample[3])
             terminal.append(_sample[4])
 
-        obs = np.array(obs)
+        observation = np.array(observation)
         actions = np.array(actions)
         rewards = np.array(rewards)
-        next_obs = np.array(next_obs)
+        next_observation = np.array(next_observation)
         terminal = np.array(terminal)
 
-        return obs, actions, rewards, next_obs, terminal
+        return observation, actions, rewards, next_observation, terminal
 
 
 def LinearDecay(value, total_steps, initial_p, final_p):
     '''Linearly decay epsilon'''
-    if total_steps > 0:
-        difference = (final_p - initial_p) / total_steps
-
     if value >= total_steps:
         return final_p
-    else:
-        return initial_p + difference *value
+    if total_steps > 0:
+        difference = (final_p - initial_p) / total_steps
+    return initial_p + difference *value
 

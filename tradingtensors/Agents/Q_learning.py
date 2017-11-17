@@ -11,7 +11,7 @@ import tensorflow as tf
 from ..settings.DQNsettings import (FINAL_P, GAMMA, INITIAL_P,
                                     UPDATE_FREQUENCY)
 from .BaseQ import (DQN, LinearDecay, ReplayBuffer, choose_action,
-                    mini_batch_training, update_target_network)
+                    mini_batch_training)
 from .visual_utils import ohlcPlot, rewardPlot
 
 class DQNAgent():
@@ -23,11 +23,14 @@ class DQNAgent():
         self.directory = directory
 
         self.neurons = [128, 64, 32]
-        self.online_net = DQN(env, self.neurons, 'online')
-        self.target_net = DQN(env, self.neurons, 'target')
+        self.online_dqn = DQN(env, self.neurons, 'online')
+        self.target_dqn = DQN(env, self.neurons, 'target')
 
         self.best_models = []
-
+    def update(self,session):
+        #Copy variables of online network to target network
+        for on_, tar_ in zip(self.online_dqn.variables, self.target_dqn.variables):
+            session.run(tf.assign(tar_,on_))
     def train(
         self,
         policy_measure='optimal',
@@ -71,10 +74,7 @@ class DQNAgent():
             session.run(tf.global_variables_initializer())
 
             #Update Target Network to Online Network
-            self.online_net, self.target_net = update_target_network(
-                        session,
-                        self.online_net,
-                        self.target_net)
+            self.update(session)
 
             saver = tf.train.Saver(max_to_keep=None)
 
@@ -105,7 +105,7 @@ class DQNAgent():
                     #Pick an action using online network
                     action = choose_action(
                         observation,
-                        self.online_net,
+                        self.online_dqn,
                         exploration,
                         self.env,
                         session,
@@ -123,11 +123,11 @@ class DQNAgent():
 
                     if t > UPDATE_FREQUENCY:
                         #Optimize online network with SGD
-                        self.online_net, self.target_net = mini_batch_training(
+                        self.online_dqn, self.target_dqn = mini_batch_training(
                             session,
                             self.env,
-                            self.online_net,
-                            self.target_net,
+                            self.online_dqn,
+                            self.target_dqn,
                             replaybuffer,
                             batch_size,
                             GAMMA
@@ -136,11 +136,7 @@ class DQNAgent():
 
                     if t % UPDATE_FREQUENCY == 0:
                         #Periodically copy online net to target net
-                        self.online_net, self.target_net = update_target_network(
-                            session,
-                            self.online_net,
-                            self.target_net
-                        )
+                        self.update(session)
 
                     if done:
                         '''End of Episode routines'''
@@ -302,7 +298,7 @@ class DQNAgent():
                 #Select Action
                 action = choose_action(
                         observation,
-                        self.online_net,
+                        self.online_dqn,
                         0, #Greedy selection
                         self.env,
                         session,
@@ -378,7 +374,7 @@ class DQNAgent():
 
             action = choose_action(
                 states[-1], #Latest state
-                self.online_net,
+                self.online_dqn,
                 0, #Greedy selection
                 self.env,
                 SESS,
