@@ -99,29 +99,6 @@ def mini_batch_training(session, env, online, target, replaybuff, batch_size=32,
 
     return online, target
 
-
-def choose_action(state, online, epsilon, env, session, train):
-    #maintain dropout ratio if training, else keep all neurons
-    if np.random.random() < epsilon:
-        #Exploration
-        return np.random.choice(env.action_space)
-    #Exploitation
-    dropout = DROPOUT if train else 1.0
-    return session.run(
-        online.Q_action,
-        feed_dict={
-            online._inputs: state[np.newaxis, :],
-            online.dropout: dropout
-            }
-        )[0]
-
-
-def update_target_network(session, online, target):
-    #Copy variables of online network to target network
-    for on_, tar_ in zip(online.variables, target.variables):
-        session.run(tf.assign(tar_,on_))
-    return online, target
-
 class ReplayBuffer(object):
 
     def __init__(self, capacity):

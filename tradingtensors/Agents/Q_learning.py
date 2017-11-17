@@ -10,8 +10,7 @@ import tensorflow as tf
 
 from ..settings.DQNsettings import (FINAL_P, GAMMA, INITIAL_P,
                                     UPDATE_FREQUENCY)
-from .BaseQ import (DQN, LinearDecay, ReplayBuffer, choose_action,
-                    mini_batch_training)
+from .BaseQ import (DQN, LinearDecay, ReplayBuffer, mini_batch_training)
 from .visual_utils import ohlcPlot, rewardPlot
 
 class DQNAgent():
@@ -31,6 +30,20 @@ class DQNAgent():
         #Copy variables of online network to target network
         for on_, tar_ in zip(self.online_dqn.variables, self.target_dqn.variables):
             session.run(tf.assign(tar_,on_))
+    def choose_action(self, state, epsilon, session, train):
+        #maintain dropout ratio if training, else keep all neurons
+        if np.random.random() < epsilon:
+            #Exploration
+            return np.random.choice(self.env.action_space)
+        #Exploitation
+        dropout = DROPOUT if train else 1.0
+        return session.run(
+            self.online_dqn.Q_action,
+            feed_dict={
+                self.online_dqn._inputs: state[np.newaxis, :],
+                self.online_dqn.dropout: dropout
+                }
+            )[0]
     def train(
         self,
         policy_measure='optimal',
@@ -103,11 +116,9 @@ class DQNAgent():
                         FINAL_P)
 
                     #Pick an action using online network
-                    action = choose_action(
+                    action = self.choose_action(
                         observation,
-                        self.online_dqn,
                         exploration,
-                        self.env,
                         session,
                         train=True)
 
@@ -296,11 +307,9 @@ class DQNAgent():
             while not done:
 
                 #Select Action
-                action = choose_action(
+                action = self.choose_action(
                         observation,
-                        self.online_dqn,
                         0, #Greedy selection
-                        self.env,
                         session,
                         train=False)
 
@@ -356,7 +365,7 @@ class DQNAgent():
         handlerThread.start()
 
 
-    def newCandleHandler(self, queue, SESS, HISTORY=20):
+    def newCandleHandler(self, queue, session, HISTORY=20):
         '''
         Receives a new Candle event and perform action
         '''
@@ -372,12 +381,10 @@ class DQNAgent():
             print ("Processing New Candle")
             data, states = self.env.sim.build_data_and_states(HISTORY)
 
-            action = choose_action(
+            action = self.choose_action(
                 states[-1], #Latest state
-                self.online_dqn,
                 0, #Greedy selection
-                self.env,
-                SESS,
+                session,
                 train=False)
 
             #Initiate position with Portfolio object
