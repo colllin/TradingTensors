@@ -9,32 +9,24 @@ import pandas as pd
 import tensorflow as tf
 
 from ..settings.DQNsettings import (FINAL_P, GAMMA, INITIAL_P,
-                                    UPDATE_FREQUENCY, HIDDEN_LAYERS)
+                                    UPDATE_FREQUENCY)
 from .BaseQ import (DQN, LinearDecay, ReplayBuffer, choose_action,
                     mini_batch_training, update_target_network)
 from .visual_utils import ohlcPlot, rewardPlot
 
-class DQNAgent(LearningAgent):
+class DQNAgent():
 
-    def __init__(self, env, PARENT_PATH):
+    def __init__(self, env, directory):
         self.env = env
 
-        self.tensor_dir_template =None
-        self.PARENT_PATH = PARENT_PATH
+        self.model_directory =None
+        self.directory = directory
 
-        self.neurons = HIDDEN_LAYERS
-        self.UPDATE_FREQUENCY = UPDATE_FREQUENCY
-
+        self.neurons = [128, 64, 32]
         self.online_net = DQN(env, self.neurons, 'online')
         self.target_net = DQN(env, self.neurons, 'target')
 
         self.best_models = []
-
-    def clearTensorFolder(self):
-        '''Remove all saved tensor model in the folder'''
-        for dir_ in os.listdir(self.PARENT_PATH):
-            os.remove(os.path.join(self.PARENT_PATH, dir_))
-
 
     def train(
         self,
@@ -52,26 +44,17 @@ class DQNAgent(LearningAgent):
         "policy measure can only be 'average', 'highest', or 'optimal'"
 
         #Define saved model directory
-        TIMESTAMP = datetime.fromtimestamp(
-            time.time()
-            ).strftime('%H%M')
-
-        self.tensor_dir_template = os.path.join(
-            self.PARENT_PATH,
-            TIMESTAMP+'_Episode%s.ckpt')
+        timestamp = datetime.fromtimestamp(time.time()).strftime('%H%M')
+        self.model_directory = os.path.join(self.directory, timestamp+'_Episode%s.ckpt')
 
         #Clear all previous tensor models
-        self.clearTensorFolder()
+        for dir_ in os.listdir(self.directory):
+            os.remove(os.path.join(self.directory, dir_))
 
-
-        #Estimate total steps
         steps_per_episode = self.env.sim.train_end_idx - self.env.sim.train_start_idx - 2
 
-        TOTAL_STEPS = steps_per_episode * train_episodes
-
-
         #Create a Transition memory storage
-        replaybuffer = ReplayBuffer(TOTAL_STEPS*1.2)
+        replaybuffer = ReplayBuffer(steps_per_episode * train_episodes * 1.2)
 
         #Use of parallelism
         config_proto=tf.ConfigProto(
@@ -80,7 +63,7 @@ class DQNAgent(LearningAgent):
             )
 
         #Keep track of top 10 models
-        current_top_10s = []
+        top_10s = []
 
         with tf.Session(config=config_proto) as sess:
 
@@ -104,7 +87,7 @@ class DQNAgent(LearningAgent):
             MAX_REWARD = 0
 
 
-            for EPI in range(1, train_episodes+1):
+            for episode in range(1, train_episodes+1):
 
                 obs = self.env.reset(TRAIN=True)
 
@@ -138,7 +121,7 @@ class DQNAgent(LearningAgent):
                     obs = new_obs
                     t += 1
 
-                    if t > self.UPDATE_FREQUENCY:
+                    if t > UPDATE_FREQUENCY:
                         #Optimize online network with SGD
                         self.online_net, self.target_net = mini_batch_training(
                             sess,
@@ -151,7 +134,7 @@ class DQNAgent(LearningAgent):
                         )
 
 
-                    if t % self.UPDATE_FREQUENCY == 0:
+                    if t % UPDATE_FREQUENCY == 0:
                         #Periodically copy online net to target net
                         self.online_net, self.target_net = update_target_network(
                             sess,
@@ -179,7 +162,7 @@ class DQNAgent(LearningAgent):
 
                         #Print statements at the end of every statements
                         print("End of Episode %s, Total Reward is %s, Average Reward is %.3f"%(
-                            EPI,
+                            episode,
                             self.env.portfolio.total_reward,
                             AVERAGE_PIPS_PER_TRADE
                             ))
@@ -197,28 +180,28 @@ class DQNAgent(LearningAgent):
 
                         #Is this SCORE greater than any current top 10s?
 
-                        TERMINAL_PATH = self.tensor_dir_template%EPI
+                        TERMINAL_PATH = self.model_directory % episode
 
 
                         #Condition: Only start recording this score if agent is no longer exploring
-                        if EPI > EPISODES_TO_EXPLORE:
+                        if episode > EPISODES_TO_EXPLORE:
 
 
-                            if len(current_top_10s) < 10:
+                            if len(top_10s) < 10:
                                 # Just append if there are not enough on the list
-                                current_top_10s.append((EPI, SCORE))
+                                top_10s.append((episode, SCORE))
 
                                 #Sort the list
-                                current_top_10s = sorted(current_top_10s, key=lambda x: x[1], reverse=True)
+                                top_10s = sorted(top_10s, key=lambda x: x[1], reverse=True)
 
                                 #Save the maximum score
-                                MAX_REWARD = current_top_10s[0][1]
+                                MAX_REWARD = top_10s[0][1]
 
                                 saver.save(sess, TERMINAL_PATH)
                             else:
                                 REPLACE = False
                                 insertion_idx = None
-                                for i, _tuple in enumerate(current_top_10s):
+                                for i, _tuple in enumerate(top_10s):
                                     _epi, _score = _tuple[0], _tuple[1]
 
                                     if SCORE > _score:
@@ -229,11 +212,11 @@ class DQNAgent(LearningAgent):
 
                                 #Remove from the last index, insert this
                                 if REPLACE:
-                                    current_top_10s.pop()
-                                    current_top_10s.insert(insertion_idx, (EPI, SCORE))
+                                    top_10s.pop()
+                                    top_10s.insert(insertion_idx, (episode, SCORE))
                                     saver.save(sess, TERMINAL_PATH)
 
-                        if exploration == FINAL_P and len(current_top_10s) == 10:
+                        if exploration == FINAL_P and len(top_10s) == 10:
 
                             if np.mean(self.reward_record[-16:-1]) > CONVERGENCE_THRESHOLD:
                                 SOLVED = True
@@ -245,7 +228,7 @@ class DQNAgent(LearningAgent):
                     print ()
                     break
 
-        self.best_models = current_top_10s
+        self.best_models = top_10s
 
 
     def trainSummary(self, TOP_N=3):
@@ -299,18 +282,18 @@ class DQNAgent(LearningAgent):
 
 
 
-    def test(self, EPISODE):
+    def test(self, episode):
         '''
-        EPISODE: int, episode to be selected
+        episode: int, episode to be selected
         '''
-        assert len(os.listdir(self.PARENT_PATH)) > 0, "No saved tensor models are found for this model, please train the network"
+        assert len(os.listdir(self.directory)) > 0, "No saved tensor models are found for this model, please train the network"
 
-        MODEL_PATH = self.tensor_dir_template%EPISODE
+        model_file = self.model_directory % episode
 
         with tf.Session() as sess:
             #Create restoration path
             saver = tf.train.Saver()
-            saver.restore(sess, MODEL_PATH)
+            saver.restore(sess, model_file)
 
             obs = self.env.reset(TRAIN=False)
             DONE= False
@@ -341,10 +324,10 @@ class DQNAgent(LearningAgent):
             self.episodeReview(0)
 
 
-    def liveTrading(self, MODEL_EPS, HISTORY=20, tradeFirst=False):
+    def liveTrading(self, episode, HISTORY=20, tradeFirst=False):
         '''
         Threaded implementation of listener and handler events
-        MODEL_EPS: int, MODEL to be chosen
+        episode: int, MODEL to be chosen
         '''
         #Set Environment and its portfolio to Live Mode
         self.env.setLive()
@@ -359,12 +342,12 @@ class DQNAgent(LearningAgent):
         else:
             self.env.lastRecordedTime = self.env.api_Handle.getLatestTime(self.env.SYMBOL)
 
-        MODEL_PATH = self.tensor_dir_template%MODEL_EPS
+        model_file = self.model_directory % episode
 
         #Tensorflow session with Chosen Model
         sess = tf.Session()
         saver = tf.train.Saver()
-        saver.restore(sess, MODEL_PATH)
+        saver.restore(sess, model_file)
 
         #Initiate an event stack
         events_q = LifoQueue(maxsize=1)
