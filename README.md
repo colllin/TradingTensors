@@ -1,6 +1,6 @@
-# TradingTensors 
+# TradingTensors
 
-A simple trading simulator inspired by the OpenAI framework. The objective of the project is to explore the viability of AI (Supervised/ Reinforcement) algorithms in the financial markets. Models built in Tensorflow. Designed to carry out historical backtesting and live trading with Oanda API. 
+A simple trading simulator inspired by the OpenAI framework. The objective of the project is to explore the viability of AI (Supervised/ Reinforcement) algorithms in the financial markets. Models built in Tensorflow. Designed to carry out historical backtesting and live trading with Oanda API.
 
 
 
@@ -32,6 +32,3 @@ pip install -e .
 
 3. Best viewed in notebooks
 
-
-
-This is by Henry Bee, intended for Mr Peter's use
