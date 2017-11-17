@@ -23,6 +23,7 @@ Thumbs.db
 *.pyc
 *.ckpt.*
 checkpoint
+*.ipynb
 
 # config file #
 serverconfig.py
