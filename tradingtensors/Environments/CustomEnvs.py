@@ -406,7 +406,7 @@ class Portfolio():
             else:
                 self._isHoldingTrade = self.api_Handle.isTradeOpen(TRADE_ID)
         return self._isHoldingTrade
-    def _set_default_trade(self):
+    def reset_trade(self):
         self.curr_trade = {
             'ID':0,
             'Entry Price':0,
@@ -418,12 +418,6 @@ class Portfolio():
             'Type':None,
             'Symbol': self.SYMBOL
             }
-    def reset_trade(self):
-        self._set_default_trade()
-        self.journal = [] #Collection of trades
-
-        #Flag to check if there are any existing positions
-        self._isHoldingTrade = False
     def reset(self):
 
         #Cumulative reward in this run (in pips)
@@ -438,7 +432,11 @@ class Portfolio():
         self.equity_curve = [] #TO BE OUTSOURCED TO AGENT
 
         #Trade Profile
-        self._set_default_trade()
+        self.reset_trade()
+        self.journal = [] #Collection of trades
+
+        #Flag to check if there are any existing positions
+        self._isHoldingTrade = False
     def continueHolding(self, **kwargs):
 
         if self.isLive:
