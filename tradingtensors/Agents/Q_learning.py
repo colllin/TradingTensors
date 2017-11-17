@@ -39,7 +39,7 @@ class DQNAgent(LearningAgent):
 
         #Base Learning Agent initialization
         super().__init__(
-            env, 
+            env,
             'Deep Q Network'
         )
 
@@ -61,9 +61,9 @@ class DQNAgent(LearningAgent):
         for dir_ in os.listdir(self.PARENT_PATH):
             os.remove(os.path.join(self.PARENT_PATH, dir_))
 
-    
+
     def train(
-        self, 
+        self,
         policy_measure='optimal',
         BATCH_SIZE = 32,
         CONVERGENCE_THRESHOLD = 2000,
@@ -83,7 +83,7 @@ class DQNAgent(LearningAgent):
             ).strftime('%H%M')
 
         self.tensor_dir_template = os.path.join(
-            self.PARENT_PATH, 
+            self.PARENT_PATH,
             TIMESTAMP+'_Episode%s.ckpt')
 
         #Clear all previous tensor models
@@ -100,7 +100,7 @@ class DQNAgent(LearningAgent):
         #Create a Transition memory storage
         replaybuffer = ReplayBuffer(TOTAL_STEPS*1.2)
 
-        #Use of parallelism 
+        #Use of parallelism
         config_proto=tf.ConfigProto(
             inter_op_parallelism_threads=8,
             intra_op_parallelism_threads=8
@@ -119,7 +119,7 @@ class DQNAgent(LearningAgent):
                         sess,
                         self.online_net,
                         self.target_net)
-           
+
             saver = tf.train.Saver(max_to_keep=None)
 
             #Reseting all tools
@@ -138,15 +138,15 @@ class DQNAgent(LearningAgent):
 
                     #Pick the decayed epsilon value
                     exploration = LinearDecay(
-                        t, 
-                        EPISODES_TO_EXPLORE*STEPS_PER_EPISODE, 
-                        INITIAL_P, 
+                        t,
+                        EPISODES_TO_EXPLORE*STEPS_PER_EPISODE,
+                        INITIAL_P,
                         FINAL_P)
 
                     #Pick an action using online network
                     ACTION = choose_action(
-                        obs, 
-                        self.online_net, 
+                        obs,
+                        self.online_net,
                         exploration,
                         self.env,
                         sess,
@@ -173,7 +173,7 @@ class DQNAgent(LearningAgent):
                             BATCH_SIZE,
                             GAMMA
                         )
-                                            
+
 
                     if t % self.UPDATE_FREQUENCY == 0:
                         #Periodically copy online net to target net
@@ -191,20 +191,20 @@ class DQNAgent(LearningAgent):
                             lastTime = self.env.sim.data.index[self.env.sim.curr_idx].to_pydatetime()
                             lastOpen = self.env.sim.data['Open'].iloc[self.env.sim.curr_idx]
                             self.env.portfolio.closeTrade(TIME=lastTime, OPEN=lastOpen)
-                            
-                        
+
+
                         #Update Bookkeeping Tools
                         AVERAGE_PIPS_PER_TRADE = self.env.portfolio.total_reward / self.env.portfolio.total_trades
                         self.journal_record.append(self.env.portfolio.journal)
                         self.avg_reward_record.append(AVERAGE_PIPS_PER_TRADE)
                         self.reward_record.append(self.env.portfolio.total_reward)
                         self.equity_curve_record.append(self.env.portfolio.equity_curve)
-                        
+
 
                         #Print statements at the end of every statements
                         print("End of Episode %s, Total Reward is %s, Average Reward is %.3f"%(
-                            EPI, 
-                            self.env.portfolio.total_reward, 
+                            EPI,
+                            self.env.portfolio.total_reward,
                             AVERAGE_PIPS_PER_TRADE
                             ))
                         print("Percentage of time spent on exploring (Random Action): %s %%"%(
@@ -220,14 +220,14 @@ class DQNAgent(LearningAgent):
 
 
                         #Is this SCORE greater than any current top 10s?
-                        
+
                         TERMINAL_PATH = self.tensor_dir_template%EPI
 
 
-                        #Condition: Only start recording this score if agent is no longer exploring 
+                        #Condition: Only start recording this score if agent is no longer exploring
                         if EPI > EPISODES_TO_EXPLORE:
-                        
-                            
+
+
                             if len(current_top_10s) < 10:
                                 # Just append if there are not enough on the list
                                 current_top_10s.append((EPI, SCORE))
@@ -241,7 +241,7 @@ class DQNAgent(LearningAgent):
                                 saver.save(sess, TERMINAL_PATH)
 
                             else:
-                                
+
                                 REPLACE = False
                                 insertion_idx = None
                                 for i, _tuple in enumerate(current_top_10s):
@@ -262,7 +262,7 @@ class DQNAgent(LearningAgent):
                         print ()
 
                         if exploration == FINAL_P and len(current_top_10s) == 10:
-                            
+
                             if np.mean(self.reward_record[-16:-1]) > CONVERGENCE_THRESHOLD:
                                 SOLVED = True
 
@@ -277,26 +277,22 @@ class DQNAgent(LearningAgent):
 
 
     def trainSummary(self, TOP_N=3):
-        
+
         #Plot Total Reward
         rewardPlot(self.reward_record, self.best_models, 'Total', TOP_N)
 
         #Plot Average Reward
         rewardPlot(self.avg_reward_record, self.best_models, "Average", TOP_N)
-        
+
         for i,m in enumerate(self.best_models):
-            eps = m[0] 
-            print ("")
+            eps = m[0]
             print ("########   RANK {}   ###########".format(i+1))
             print ("Episode          | {}".format(eps))
             print ("Total Reward     | {0:.2f}".format(self.reward_record[eps-1]))
             print ("Average Reward   | {0:.2f}".format(self.avg_reward_record[eps-1]))
-            print ("################################")
-            print ("")
-
 
     def episodeReview(self, EPS):
-        
+
         idx = EPS - 1
 
         journal = pd.DataFrame(self.journal_record[idx])
@@ -348,27 +344,27 @@ class DQNAgent(LearningAgent):
             DONE= False
 
             while not DONE:
-                
+
                 #Select Action
                 ACTION = choose_action(
-                        obs, 
-                        self.online_net, 
+                        obs,
+                        self.online_net,
                         0, #Greedy selection
                         self.env,
                         sess, TRAIN=False)
 
                 #Transit to next state given action
                 new_obs, _, _, DONE = self.env.step(ACTION)
-                
+
                 obs = new_obs
-            
+
 
             AVERAGE_PIPS_PER_TRADE = self.env.portfolio.total_reward / self.env.portfolio.total_trades
             self.journal_record.append(self.env.portfolio.journal)
             self.avg_reward_record.append(AVERAGE_PIPS_PER_TRADE)
             self.reward_record.append(self.env.portfolio.total_reward)
             self.equity_curve_record.append(self.env.portfolio.equity_curve)
-            
+
 
             self.episodeReview(0)
 
@@ -386,7 +382,7 @@ class DQNAgent(LearningAgent):
 
         #Initialize the time of the current incomplete candle
         #Set True if start trading on current candle, (Not Recommended during Market Close)
-        if tradeFirst: 
+        if tradeFirst:
             self.env.lastRecordedTime = None
         else:
             self.env.lastRecordedTime = self.env.api_Handle.getLatestTime(self.env.SYMBOL)
@@ -398,7 +394,7 @@ class DQNAgent(LearningAgent):
         saver = tf.train.Saver()
         saver.restore(sess, MODEL_PATH)
 
-        #Initiate an event stack 
+        #Initiate an event stack
         events_q = LifoQueue(maxsize=1)
 
         listenerThread = Thread(target=self.env.candleListener, args=(events_q,))
@@ -411,9 +407,9 @@ class DQNAgent(LearningAgent):
 
     def newCandleHandler(self, queue, SESS, HISTORY=20):
         '''
-        Receives a new Candle event and perform action 
+        Receives a new Candle event and perform action
         '''
-        
+
         while True:
 
             if not queue.empty():
@@ -424,16 +420,16 @@ class DQNAgent(LearningAgent):
                     print ("Processing New Candle")
 
                     data, states = self.env.sim.build_data_and_states(HISTORY)
-                    
+
                     ACTION = choose_action(
                         states[-1], #Latest state
-                        self.online_net, 
+                        self.online_net,
                         0, #Greedy selection
                         self.env,
                         SESS,
                         TRAIN=False)
-                    
+
                     #Initiate position with Portfolio object
                     self.env.portfolio.newCandleHandler(ACTION)
-                    
+
                     queue.task_done()
