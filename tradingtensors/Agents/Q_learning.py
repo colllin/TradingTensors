@@ -14,28 +14,10 @@ from .BaseQ import (DQN, LinearDecay, ReplayBuffer, choose_action,
                     mini_batch_training, update_target_network)
 from .visual_utils import ohlcPlot, rewardPlot
 
-
-class LearningAgent(object):
-    '''Parent Class of Learning Agents
-    '''
-
-    def __init__(self, env):
-        self.env = env
-
-    def reset_bookkeeping_tools(self):
-        #Book-keeping tools
-        self.journal_record = []
-        self.reward_record = []
-        self.avg_reward_record = []
-        self.equity_curve_record = []
-
-
 class DQNAgent(LearningAgent):
 
     def __init__(self, env, PARENT_PATH):
-
-        #Base Learning Agent initialization
-        super().__init__(env)
+        self.env = env
 
         self.tensor_dir_template =None
         self.PARENT_PATH = PARENT_PATH
@@ -48,7 +30,6 @@ class DQNAgent(LearningAgent):
 
         self.best_models = []
 
-
     def clearTensorFolder(self):
         '''Remove all saved tensor model in the folder'''
         for dir_ in os.listdir(self.PARENT_PATH):
@@ -58,10 +39,10 @@ class DQNAgent(LearningAgent):
     def train(
         self,
         policy_measure='optimal',
-        BATCH_SIZE = 32,
+        batch_size = 32,
         CONVERGENCE_THRESHOLD = 2000,
         EPISODES_TO_EXPLORE = 30,
-        TRAIN_EPISODES = 200
+        train_episodes = 200
         ):
         '''
         Run the full training cycle
@@ -84,10 +65,9 @@ class DQNAgent(LearningAgent):
 
 
         #Estimate total steps
-        STEPS_PER_EPISODE = \
-            self.env.sim.train_end_idx - self.env.sim.train_start_idx - 2
+        steps_per_episode = self.env.sim.train_end_idx - self.env.sim.train_start_idx - 2
 
-        TOTAL_STEPS = STEPS_PER_EPISODE * TRAIN_EPISODES
+        TOTAL_STEPS = steps_per_episode * train_episodes
 
 
         #Create a Transition memory storage
@@ -116,12 +96,15 @@ class DQNAgent(LearningAgent):
             saver = tf.train.Saver(max_to_keep=None)
 
             #Reseting all tools
-            self.reset_bookkeeping_tools()
+            self.journal_record = []
+            self.reward_record = []
+            self.avg_reward_record = []
+            self.equity_curve_record = []
             t = 0
             MAX_REWARD = 0
 
 
-            for EPI in range(1, TRAIN_EPISODES+1):
+            for EPI in range(1, train_episodes+1):
 
                 obs = self.env.reset(TRAIN=True)
 
@@ -132,7 +115,7 @@ class DQNAgent(LearningAgent):
                     #Pick the decayed epsilon value
                     exploration = LinearDecay(
                         t,
-                        EPISODES_TO_EXPLORE*STEPS_PER_EPISODE,
+                        EPISODES_TO_EXPLORE * steps_per_episode,
                         INITIAL_P,
                         FINAL_P)
 
@@ -163,7 +146,7 @@ class DQNAgent(LearningAgent):
                             self.online_net,
                             self.target_net,
                             replaybuffer,
-                            BATCH_SIZE,
+                            batch_size,
                             GAMMA
                         )
 
@@ -232,9 +215,7 @@ class DQNAgent(LearningAgent):
                                 MAX_REWARD = current_top_10s[0][1]
 
                                 saver.save(sess, TERMINAL_PATH)
-
                             else:
-
                                 REPLACE = False
                                 insertion_idx = None
                                 for i, _tuple in enumerate(current_top_10s):
@@ -251,8 +232,6 @@ class DQNAgent(LearningAgent):
                                     current_top_10s.pop()
                                     current_top_10s.insert(insertion_idx, (EPI, SCORE))
                                     saver.save(sess, TERMINAL_PATH)
-
-                        print ()
 
                         if exploration == FINAL_P and len(current_top_10s) == 10:
 

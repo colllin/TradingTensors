@@ -24,12 +24,12 @@ DEFAULT_HEADERS = {
 
 ############ OANDA REQUEST HANDLER ####################################
 class OandaHandler(object):
-    def __init__(self, timeframe, mode='practice'):
+    def __init__(self, granularity, mode='practice'):
 
         '''
         Input query parameters for retrieve instrument history Oanda API:
         '''
-        self.TIMEFRAME = timeframe #Granularity
+        self.granularity = granularity
 
         self.DEFAULT_URL = DEFAULT_URL[mode]
 
@@ -45,7 +45,7 @@ class OandaHandler(object):
         #Parameters required to retrieve history
         params = {
           "count": HISTORY,
-          "granularity": self.TIMEFRAME,
+          "granularity": self.granularity,
           "price": "M"
         }
 
@@ -293,7 +293,7 @@ class OandaHandler(object):
 
         params = {
           "count": 1,
-          "granularity": self.TIMEFRAME,
+          "granularity": self.granularity,
           "price": "M"
         }
 

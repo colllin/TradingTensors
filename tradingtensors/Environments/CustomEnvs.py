@@ -4,22 +4,22 @@ import numpy as np
 import pandas as pd
 
 from .BaseClass import BaseEnv, BasePortfolio, BaseSimulator
-from ..settings.serverconfig import GRANULARITIES, INDICATORS_SETTINGS, TF_IN_SECONDS, SYMBOL_HISTORY, TRAIN_SPLIT
+from ..settings.serverconfig import GRANULARITIES, TF_IN_SECONDS, SYMBOL_HISTORY, TRAIN_SPLIT
 from ..functions.planetry_functions import get_planet_coordinates
 from ..functions.utils import OandaHandler
 
 
 class OandaEnv(BaseEnv):
 
-    def __init__(self, INSTRUMENT, TIMEFRAME, train=True, _isLive=False,
+    def __init__(self, INSTRUMENT, granularity, train=True, _isLive=False,
                  mode='practice', additional_pairs=[],
                  trade_duration=1, lookback_period=0,
                  planet_data={}, PLANET_FORWARD_PERIOD=0):
 
-        assert TIMEFRAME in GRANULARITIES, "Please use this timeframe format {}".format(GRANULARITIES)
+        assert granularity in GRANULARITIES, "Please use this timeframe format {}".format(GRANULARITIES)
         assert '_' in INSTRUMENT, "Please define currency pair in this format XXX_XXX"
 
-        self.api_Handle = OandaHandler(TIMEFRAME, mode)
+        self.api_Handle = OandaHandler(granularity, mode)
         PRECISION = self.api_Handle.get_instrument_precision(INSTRUMENT)
 
         self.sim = OandaSim(
