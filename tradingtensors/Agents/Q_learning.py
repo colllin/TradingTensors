@@ -65,14 +65,14 @@ class DQNAgent():
         #Keep track of top 10 models
         top_10s = []
 
-        with tf.Session(config=config_proto) as sess:
+        with tf.Session(config=config_proto) as session:
 
             #Initialize all weights and biases in NNs
-            sess.run(tf.global_variables_initializer())
+            session.run(tf.global_variables_initializer())
 
             #Update Target Network to Online Network
             self.online_net, self.target_net = update_target_network(
-                        sess,
+                        session,
                         self.online_net,
                         self.target_net)
 
@@ -84,16 +84,16 @@ class DQNAgent():
             self.avg_reward_record = []
             self.equity_curve_record = []
             t = 0
-            MAX_REWARD = 0
+            max_score = 0
 
 
             for episode in range(1, train_episodes+1):
 
-                obs = self.env.reset(TRAIN=True)
+                observation = self.env.reset(TRAIN=True)
 
-                DONE, SOLVED = False, False
+                done, SOLVED = False, False
 
-                while not DONE:
+                while not done:
 
                     #Pick the decayed epsilon value
                     exploration = LinearDecay(
@@ -103,28 +103,28 @@ class DQNAgent():
                         FINAL_P)
 
                     #Pick an action using online network
-                    ACTION = choose_action(
-                        obs,
+                    action = choose_action(
+                        observation,
                         self.online_net,
                         exploration,
                         self.env,
-                        sess,
-                        TRAIN=True)
+                        session,
+                        train=True)
 
                     #Advance one step with the action in our environment
-                    new_obs, _action, reward, DONE = self.env.step(ACTION)
+                    new_observation, _action, reward, done = self.env.step(action)
 
                     #Add the Experience to the memory
-                    replaybuffer.add(obs, _action, reward, new_obs, float(DONE))
+                    replaybuffer.add(observation, _action, reward, new_observation, float(done))
 
 
-                    obs = new_obs
+                    observation = new_observation
                     t += 1
 
                     if t > UPDATE_FREQUENCY:
                         #Optimize online network with SGD
                         self.online_net, self.target_net = mini_batch_training(
-                            sess,
+                            session,
                             self.env,
                             self.online_net,
                             self.target_net,
@@ -137,12 +137,12 @@ class DQNAgent():
                     if t % UPDATE_FREQUENCY == 0:
                         #Periodically copy online net to target net
                         self.online_net, self.target_net = update_target_network(
-                            sess,
+                            session,
                             self.online_net,
                             self.target_net
                         )
 
-                    if DONE:
+                    if done:
                         '''End of Episode routines'''
 
                         #Close the Last Trade in portfolio if any
@@ -153,9 +153,9 @@ class DQNAgent():
 
 
                         #Update Bookkeeping Tools
-                        AVERAGE_PIPS_PER_TRADE = self.env.portfolio.total_reward / self.env.portfolio.total_trades
+                        average_pips_per_trade = self.env.portfolio.total_reward / self.env.portfolio.total_trades
                         self.journal_record.append(self.env.portfolio.journal)
-                        self.avg_reward_record.append(AVERAGE_PIPS_PER_TRADE)
+                        self.avg_reward_record.append(average_pips_per_trade)
                         self.reward_record.append(self.env.portfolio.total_reward)
                         self.equity_curve_record.append(self.env.portfolio.equity_curve)
 
@@ -164,21 +164,21 @@ class DQNAgent():
                         print("End of Episode %s, Total Reward is %s, Average Reward is %.3f"%(
                             episode,
                             self.env.portfolio.total_reward,
-                            AVERAGE_PIPS_PER_TRADE
+                            average_pips_per_trade
                             ))
                         print("Percentage of time spent on exploring (Random Action): %s %%"%(
                             int(100 * exploration)))
 
                         #Save this score
                         if policy_measure == 'average':
-                            SCORE = AVERAGE_PIPS_PER_TRADE
+                            score = average_pips_per_trade
                         elif policy_measure == 'highest':
-                            SCORE = self.reward_record[-1]
+                            score = self.reward_record[-1]
                         else:
-                            SCORE = np.abs(AVERAGE_PIPS_PER_TRADE) * self.reward_record[-1]
+                            score = np.abs(average_pips_per_trade) * self.reward_record[-1]
 
 
-                        #Is this SCORE greater than any current top 10s?
+                        #Is this score greater than any current top 10s?
 
                         TERMINAL_PATH = self.model_directory % episode
 
@@ -189,32 +189,32 @@ class DQNAgent():
 
                             if len(top_10s) < 10:
                                 # Just append if there are not enough on the list
-                                top_10s.append((episode, SCORE))
+                                top_10s.append((episode, score))
 
                                 #Sort the list
                                 top_10s = sorted(top_10s, key=lambda x: x[1], reverse=True)
 
                                 #Save the maximum score
-                                MAX_REWARD = top_10s[0][1]
+                                max_score = top_10s[0][1]
 
-                                saver.save(sess, TERMINAL_PATH)
+                                saver.save(session, TERMINAL_PATH)
                             else:
-                                REPLACE = False
+                                replace = False
                                 insertion_idx = None
                                 for i, _tuple in enumerate(top_10s):
                                     _epi, _score = _tuple[0], _tuple[1]
 
-                                    if SCORE > _score:
-                                        MAX_REWARD = SCORE
+                                    if score > _score:
+                                        max_score = score
                                         insertion_idx = i
-                                        REPLACE = True
+                                        replace = True
                                         break
 
                                 #Remove from the last index, insert this
-                                if REPLACE:
+                                if replace:
                                     top_10s.pop()
-                                    top_10s.insert(insertion_idx, (episode, SCORE))
-                                    saver.save(sess, TERMINAL_PATH)
+                                    top_10s.insert(insertion_idx, (episode, score))
+                                    saver.save(session, TERMINAL_PATH)
 
                         if exploration == FINAL_P and len(top_10s) == 10:
 
@@ -240,23 +240,22 @@ class DQNAgent():
         rewardPlot(self.avg_reward_record, self.best_models, "Average", TOP_N)
 
         for i,m in enumerate(self.best_models):
-            eps = m[0]
+            episode = m[0]
             print ("########   RANK {}   ###########".format(i+1))
-            print ("Episode          | {}".format(eps))
-            print ("Total Reward     | {0:.2f}".format(self.reward_record[eps-1]))
-            print ("Average Reward   | {0:.2f}".format(self.avg_reward_record[eps-1]))
+            print ("Episode          | {}".format(episode))
+            print ("Total Reward     | {0:.2f}".format(self.reward_record[episode-1]))
+            print ("Average Reward   | {0:.2f}".format(self.avg_reward_record[episode-1]))
 
-    def episodeReview(self, EPS):
+    def episodeReview(self, episode):
 
-        idx = EPS - 1
+        index = episode - 1
 
-        journal = pd.DataFrame(self.journal_record[idx])
+        journal = pd.DataFrame(self.journal_record[index])
 
         buys = journal.loc[journal['Type']=='BUY', :]
         sells = journal.loc[journal['Type']=='SELL', :]
 
-        print ("Summary Statistics for Episode %s \n"%(EPS))
-
+        print ("Summary Statistics for Episode %s \n"%(episode))
         print ("Total Trades            | {}        (Buy){}       (Sell){} "\
             .format(journal.shape[0], buys.shape[0], sells.shape[0]))
 
@@ -278,7 +277,7 @@ class DQNAgent():
         print ("Average Trade Duration  | %.2f"%(duration))
 
         #print candle_stick
-        ohlcPlot(self.journal_record[idx], self.env.sim.data, self.equity_curve_record[idx])
+        ohlcPlot(self.journal_record[index], self.env.sim.data, self.equity_curve_record[index])
 
 
 
@@ -290,33 +289,34 @@ class DQNAgent():
 
         model_file = self.model_directory % episode
 
-        with tf.Session() as sess:
+        with tf.Session() as session:
             #Create restoration path
             saver = tf.train.Saver()
-            saver.restore(sess, model_file)
+            saver.restore(session, model_file)
 
-            obs = self.env.reset(TRAIN=False)
-            DONE= False
+            observation = self.env.reset(TRAIN=False)
+            done = False
 
-            while not DONE:
+            while not done:
 
                 #Select Action
-                ACTION = choose_action(
-                        obs,
+                action = choose_action(
+                        observation,
                         self.online_net,
                         0, #Greedy selection
                         self.env,
-                        sess, TRAIN=False)
+                        session,
+                        train=False)
 
                 #Transit to next state given action
-                new_obs, _, _, DONE = self.env.step(ACTION)
+                new_observation, _, _, done = self.env.step(action)
 
-                obs = new_obs
+                observation = new_observation
 
 
-            AVERAGE_PIPS_PER_TRADE = self.env.portfolio.total_reward / self.env.portfolio.total_trades
+            average_pips_per_trade = self.env.portfolio.total_reward / self.env.portfolio.total_trades
             self.journal_record.append(self.env.portfolio.journal)
-            self.avg_reward_record.append(AVERAGE_PIPS_PER_TRADE)
+            self.avg_reward_record.append(average_pips_per_trade)
             self.reward_record.append(self.env.portfolio.total_reward)
             self.equity_curve_record.append(self.env.portfolio.equity_curve)
 
@@ -345,15 +345,15 @@ class DQNAgent():
         model_file = self.model_directory % episode
 
         #Tensorflow session with Chosen Model
-        sess = tf.Session()
+        session = tf.Session()
         saver = tf.train.Saver()
-        saver.restore(sess, model_file)
+        saver.restore(session, model_file)
 
         #Initiate an event stack
         events_q = LifoQueue(maxsize=1)
 
         listenerThread = Thread(target=self.env.candleListener, args=(events_q,))
-        handlerThread = Thread(target=self.newCandleHandler, args=(events_q, sess))
+        handlerThread = Thread(target=self.newCandleHandler, args=(events_q, session))
 
         #Start threads
         listenerThread.start()
@@ -364,27 +364,27 @@ class DQNAgent():
         '''
         Receives a new Candle event and perform action
         '''
-
         while True:
 
-            if not queue.empty():
-                event = queue.get()
+            if queue.empty():
+                continue
+            event = queue.get()
 
-                if event == 'New Candle':
+            if event != 'New Candle':
+                continue
 
-                    print ("Processing New Candle")
+            print ("Processing New Candle")
+            data, states = self.env.sim.build_data_and_states(HISTORY)
 
-                    data, states = self.env.sim.build_data_and_states(HISTORY)
+            action = choose_action(
+                states[-1], #Latest state
+                self.online_net,
+                0, #Greedy selection
+                self.env,
+                SESS,
+                train=False)
 
-                    ACTION = choose_action(
-                        states[-1], #Latest state
-                        self.online_net,
-                        0, #Greedy selection
-                        self.env,
-                        SESS,
-                        TRAIN=False)
+            #Initiate position with Portfolio object
+            self.env.portfolio.newCandleHandler(action)
 
-                    #Initiate position with Portfolio object
-                    self.env.portfolio.newCandleHandler(ACTION)
-
-                    queue.task_done()
+            queue.task_done()

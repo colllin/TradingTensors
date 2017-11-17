@@ -3,7 +3,6 @@ GAMMA = 0.99
 UPDATE_FREQUENCY = 500
 
 #Regularization Params
-L2_REG_LAMBDA = 0.9 #Higher reg, lower overfitting
 DROPOUT = 0.1 # Dropout: How much neurons to keep?
 
 

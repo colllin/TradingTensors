@@ -56,10 +56,10 @@ class OandaEnv(BaseEnv):
 
     def reset(self, TRAIN):
         self.isTraining = TRAIN
-        states = self.sim.reset()
+        observation = self.sim.reset()
         self.portfolio.reset()
 
-        return states
+        return observation
 
     '''Live Trading Functionalities
     A Threaded implementation

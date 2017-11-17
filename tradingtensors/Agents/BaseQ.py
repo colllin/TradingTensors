@@ -2,7 +2,7 @@ import tensorflow as tf
 from tensorflow.contrib import layers
 import numpy as np
 
-from ..settings.DQNsettings import L2_REG_LAMBDA, DROPOUT
+from ..settings.DQNsettings import DROPOUT
 
 def huber_loss(error, delta=1.0):
     return tf.where(
@@ -20,11 +20,31 @@ class DQN(object):
 
         with tf.variable_scope(scope):
             self._inputs = tf.placeholder(tf.float32, [None, self.inpt_dim])
-            self.keep_prob = tf.placeholder(tf.float32)
+            self.dropout = tf.placeholder(tf.float32)
 
             self.build_q_network(hiddens)
 
-            self.create_optimizer()
+            # create_optimizer
+            #Placeholder to hold values for Q_values estimated by target_network
+            self.target_q_t = tf.placeholder(tf.float32, [None])
+
+            #Compute current_Q estimation using online network, states and action are drawn from training batch
+            self.action = tf.placeholder(tf.int64, [None])
+            action_one_hot = tf.one_hot(self.action, self.num_actions, 1.0, 0.0)
+            self.current_Q = tf.reduce_sum(self.Q_t * action_one_hot, reduction_indices=1)
+
+
+            #Difference between target_network and online network estimation
+            self.td_error = huber_loss(self.target_q_t - self.current_Q)
+
+            self.loss = tf.reduce_mean(self.td_error)
+
+            #Dynamic Learning steps- decaying with episodes
+            global_step = tf.Variable(0, trainable=False)
+            learner_decay = tf.train.exponential_decay(1e-3, global_step, 10000, 0.96, staircase=True)
+            self.trainer = tf.train.AdamOptimizer(learning_rate=learner_decay)
+            self.optimize = self.trainer.minimize(self.loss, global_step=global_step)
+            # create_optimizer end
 
             self.variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope)
 
@@ -34,32 +54,10 @@ class DQN(object):
 
         for hidden in hiddens:
             out= layers.fully_connected(inputs=out, num_outputs= hidden, activation_fn=tf.tanh, weights_regularizer=layers.l2_regularizer(scale=0.1))
-            out = tf.nn.dropout(out, self.keep_prob)
+            out = tf.nn.dropout(out, self.dropout)
 
         self.Q_t = layers.fully_connected(out, self.num_actions, activation_fn=None)
         self.Q_action = tf.argmax(self.Q_t, axis=1)
-
-    def create_optimizer(self):
-        #Placeholder to hold values for Q_values estimated by target_network
-        self.target_q_t = tf.placeholder(tf.float32, [None])
-
-        #Compute current_Q estimation using online network, states and action are drawn from training batch
-        self.action = tf.placeholder(tf.int64, [None])
-        action_one_hot = tf.one_hot(self.action, self.num_actions, 1.0, 0.0)
-        self.current_Q = tf.reduce_sum(self.Q_t * action_one_hot, reduction_indices=1)
-
-
-        #Difference between target_network and online network estimation
-        self.td_error = huber_loss(self.target_q_t - self.current_Q)
-
-        self.loss = tf.reduce_mean(self.td_error)
-
-        #Dynamic Learning steps- decaying with episodes
-        global_step = tf.Variable(0, trainable=False)
-        learner_decay = tf.train.exponential_decay(1e-3, global_step, 10000, 0.96, staircase=True)
-        self.trainer = tf.train.AdamOptimizer(learning_rate=learner_decay)
-        self.optimize = self.trainer.minimize(self.loss, global_step=global_step)
-
 
 def mini_batch_training(session, env, online, target, replaybuff, batch_size=32, discount=0.99):
     '''
@@ -73,12 +71,12 @@ def mini_batch_training(session, env, online, target, replaybuff, batch_size=32,
     #Use online network to generate next actions
     next_action = session.run(online.Q_action, feed_dict ={
         online._inputs: np.reshape(obses_tp1, state_shape),
-        online.keep_prob: DROPOUT
+        online.dropout: DROPOUT
     })
     #Use target network to predict next Q_value
     next_Q = session.run(target.Q_t, feed_dict ={
             target._inputs: np.reshape(obses_tp1, state_shape),
-            target.keep_prob: DROPOUT
+            target.dropout: DROPOUT
         })
 
     #Select Q_values indexed by pred_actions
@@ -92,45 +90,38 @@ def mini_batch_training(session, env, online, target, replaybuff, batch_size=32,
         online.target_q_t: target_q_t,
         online.action: actions,
         online._inputs: np.reshape(obses_t, state_shape),
-        online.keep_prob: DROPOUT
+        online.dropout: DROPOUT
     })
 
     return online, target
 
 
-def choose_action(state, online, EPSILON, env, session, TRAIN):
-
-    #maintain keep_prob ratio if training, else keep all neurons
-    keep_prob = DROPOUT if TRAIN else 1.0
-
-    if np.random.random() < EPSILON:
+def choose_action(state, online, epsilon, env, session, train):
+    #maintain dropout ratio if training, else keep all neurons
+    if np.random.random() < epsilon:
         #Exploration
-        action = np.random.choice(env.action_space)
-    else:
-        #Exploitation
-        action= session.run(
-            online.Q_action,
-            feed_dict={
-                online._inputs: state[np.newaxis, :],
-                online.keep_prob: keep_prob
-                }
-            )[0]
-    return action
+        return np.random.choice(env.action_space)
+    #Exploitation
+    dropout = DROPOUT if train else 1.0
+    return session.run(
+        online.Q_action,
+        feed_dict={
+            online._inputs: state[np.newaxis, :],
+            online.dropout: dropout
+            }
+        )[0]
 
 
 def update_target_network(session, online, target):
     #Copy variables of online network to target network
-    online_vars = online.variables
-    target_vars = target.variables
-    for on_, tar_ in zip(online_vars, target_vars):
+    for on_, tar_ in zip(online.variables, target.variables):
         session.run(tf.assign(tar_,on_))
     return online, target
 
-
 class ReplayBuffer(object):
 
-    def __init__(self, SIZE):
-        self.capacity = SIZE
+    def __init__(self, capacity):
+        self.capacity = capacity
         self.storage = []
 
     def add(self, obs, action, reward, next_obs, terminal):
