@@ -8,9 +8,8 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 
-from ..settings.DQNsettings import (FINAL_P, GAMMA, INITIAL_P,
-                                    UPDATE_FREQUENCY)
-from .BaseQ import (DQN, LinearDecay, ReplayBuffer, mini_batch_training)
+from ..settings.DQNsettings import (FINAL_P, GAMMA, INITIAL_P, UPDATE_FREQUENCY, DROPOUT)
+from .BaseQ import (DQN, LinearDecay, ReplayBuffer)
 from .visual_utils import ohlcPlot, rewardPlot
 
 class DQNAgent():
@@ -40,10 +39,43 @@ class DQNAgent():
         return session.run(
             self.online_dqn.Q_action,
             feed_dict={
-                self.online_dqn._inputs: state[np.newaxis, :],
+                self.online_dqn.features: state[np.newaxis, :],
                 self.online_dqn.dropout: dropout
                 }
             )[0]
+    def mini_batch_training(self, session, replaybuff, batch_size=32, discount=0.99):
+        '''
+        Sample Batch from memory and optimize online network
+        '''
+        obses_t, actions, rewards, obses_tp1, terminal = replaybuff.sample(batch_size)
+
+        #Double Q learning implementation
+        state_shape = [batch_size, self.env.observation_space]
+
+        #Use online network to generate next actions
+        next_action = session.run(self.online_dqn.Q_action, feed_dict ={
+            self.online_dqn.features: np.reshape(obses_tp1, state_shape),
+            self.online_dqn.dropout: DROPOUT
+        })
+        #Use target network to predict next Q_value
+        next_Q = session.run(self.target_dqn.Q_t, feed_dict ={
+                self.target_dqn.features: np.reshape(obses_tp1, state_shape),
+                self.target_dqn.dropout: DROPOUT
+            })
+
+        #Select Q_values indexed by pred_actions
+        Q_prime = [next_Q[i][a] for i, a in enumerate(next_action)]
+
+
+        #Update Rule of the Bellman Equation
+        target_q_t = rewards + (1. - terminal) * discount * Q_prime
+
+        _ = session.run([self.online_dqn.optimize], feed_dict={
+            self.online_dqn.target_q_t: target_q_t,
+            self.online_dqn.action: actions,
+            self.online_dqn.features: np.reshape(obses_t, state_shape),
+            self.online_dqn.dropout: DROPOUT
+        })
     def train(
         self,
         policy_measure='optimal',
@@ -134,16 +166,7 @@ class DQNAgent():
 
                     if t > UPDATE_FREQUENCY:
                         #Optimize online network with SGD
-                        self.online_dqn, self.target_dqn = mini_batch_training(
-                            session,
-                            self.env,
-                            self.online_dqn,
-                            self.target_dqn,
-                            replaybuffer,
-                            batch_size,
-                            GAMMA
-                        )
-
+                        self.mini_batch_training(session, replaybuffer, batch_size, GAMMA)
 
                     if t % UPDATE_FREQUENCY == 0:
                         #Periodically copy online net to target net

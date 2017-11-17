@@ -14,12 +14,9 @@ def huber_loss(error, delta=1.0):
 
 class DQN(object):
     def __init__(self, env, hiddens, scope):
-
         self.num_actions = env.action_space
-        self.inpt_dim = env.observation_space
-
         with tf.variable_scope(scope):
-            self._inputs = tf.placeholder(tf.float32, [None, self.inpt_dim])
+            self.features = tf.placeholder(tf.float32, [None, env.observation_space])
             self.dropout = tf.placeholder(tf.float32)
 
             self.build_q_network(hiddens)
@@ -30,7 +27,7 @@ class DQN(object):
 
             #Compute current_Q estimation using online network, states and action are drawn from training batch
             self.action = tf.placeholder(tf.int64, [None])
-            action_one_hot = tf.one_hot(self.action, self.num_actions, 1.0, 0.0)
+            action_one_hot = tf.one_hot(self.action, env.action_space, 1.0, 0.0)
             self.current_Q = tf.reduce_sum(self.Q_t * action_one_hot, reduction_indices=1)
 
 
@@ -50,54 +47,18 @@ class DQN(object):
             self.variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope)
 
     def build_q_network(self, hiddens):
-        out = self._inputs
+        inputs = self.features
 
         for hidden in hiddens:
-            out= layers.fully_connected(
-                inputs=out,
+            inputs= layers.fully_connected(
+                inputs=inputs,
                 num_outputs= hidden,
                 activation_fn=tf.tanh,
                 weights_regularizer=layers.l2_regularizer(scale=0.1))
-            out = tf.nn.dropout(out, self.dropout)
+            inputs = tf.nn.dropout(inputs, self.dropout)
 
-        self.Q_t = layers.fully_connected(out, self.num_actions, activation_fn=None)
+        self.Q_t = layers.fully_connected(inputs, self.num_actions, activation_fn=None)
         self.Q_action = tf.argmax(self.Q_t, axis=1)
-
-def mini_batch_training(session, env, online, target, replaybuff, batch_size=32, discount=0.99):
-    '''
-    Sample Batch from memory and optimize online network
-    '''
-    obses_t, actions, rewards, obses_tp1, terminal = replaybuff.sample(batch_size)
-
-    #Double Q learning implementation
-    state_shape = [batch_size, env.observation_space]
-
-    #Use online network to generate next actions
-    next_action = session.run(online.Q_action, feed_dict ={
-        online._inputs: np.reshape(obses_tp1, state_shape),
-        online.dropout: DROPOUT
-    })
-    #Use target network to predict next Q_value
-    next_Q = session.run(target.Q_t, feed_dict ={
-            target._inputs: np.reshape(obses_tp1, state_shape),
-            target.dropout: DROPOUT
-        })
-
-    #Select Q_values indexed by pred_actions
-    Q_prime = [next_Q[i][a] for i, a in enumerate(next_action)]
-
-
-    #Update Rule of the Bellman Equation
-    target_q_t = rewards + (1. - terminal) * discount * Q_prime
-
-    _ = session.run([online.optimize], feed_dict={
-        online.target_q_t: target_q_t,
-        online.action: actions,
-        online._inputs: np.reshape(obses_t, state_shape),
-        online.dropout: DROPOUT
-    })
-
-    return online, target
 
 class ReplayBuffer(object):
 
@@ -110,15 +71,15 @@ class ReplayBuffer(object):
 
         if len(self.storage) <= self.capacity:
             self.storage.append(instance)
-        else:
-            #Remove the first, add to the other end
-            self.storage.pop(0)
-            self.storage.append(instance)
+            return
+        #Remove the first, add to the other end
+        self.storage.pop(0)
+        self.storage.append(instance)
 
-    def sample(self, n):
+    def sample(self, size):
 
-        #Select n indexes from storage
-        index = np.random.choice(len(self.storage), size=n, replace=False)
+        #Select size indexes from storage
+        index = np.random.choice(len(self.storage), size=size, replace=False)
 
         observation, actions, rewards, next_observation, terminal = [], [], [], [], []
 
