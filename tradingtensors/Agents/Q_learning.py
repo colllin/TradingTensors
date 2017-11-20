@@ -29,17 +29,16 @@ class DQNAgent():
         #Copy variables of online network to target network
         for on_, tar_ in zip(self.online_dqn.variables, self.target_dqn.variables):
             session.run(tf.assign(tar_,on_))
-    def choose_action(self, state, epsilon, session, train):
+    def choose_action(self, observation, epsilon, session, dropout):
         #maintain dropout ratio if training, else keep all neurons
         if np.random.random() < epsilon:
             #Exploration
             return np.random.choice(self.env.action_space)
         #Exploitation
-        dropout = DROPOUT if train else 1.0
         return session.run(
             self.online_dqn.Q_action,
             feed_dict={
-                self.online_dqn.features: state[np.newaxis, :],
+                self.online_dqn.features: observation[np.newaxis, :],
                 self.online_dqn.dropout: dropout
                 }
             )[0]
@@ -58,7 +57,9 @@ class DQNAgent():
             self.online_dqn.dropout: DROPOUT
         })
         #Use target network to predict next Q_value
-        next_Q = session.run(self.target_dqn.Q_t, feed_dict ={
+        next_Q = session.run(
+            self.target_dqn.Q_t,
+             feed_dict ={
                 self.target_dqn.features: np.reshape(obses_tp1, state_shape),
                 self.target_dqn.dropout: DROPOUT
             })
@@ -70,12 +71,14 @@ class DQNAgent():
         #Update Rule of the Bellman Equation
         target_q_t = rewards + (1. - terminal) * discount * Q_prime
 
-        _ = session.run([self.online_dqn.optimize], feed_dict={
-            self.online_dqn.target_q_t: target_q_t,
-            self.online_dqn.action: actions,
-            self.online_dqn.features: np.reshape(obses_t, state_shape),
-            self.online_dqn.dropout: DROPOUT
-        })
+        session.run(
+            [self.online_dqn.optimize],
+             feed_dict={
+                self.online_dqn.target_q_t: target_q_t,
+                self.online_dqn.action: actions,
+                self.online_dqn.features: np.reshape(obses_t, state_shape),
+                self.online_dqn.dropout: DROPOUT
+            })
     def train(
         self,
         policy_measure='optimal',
@@ -153,7 +156,7 @@ class DQNAgent():
                     # linear decay end
 
                     #Pick an action using online network
-                    action = self.choose_action(observation, exploration, session, train=True)
+                    action = self.choose_action(observation=observation, epsilon=exploration, session=session, dropout=DROPOUT)
 
                     #Advance one step with the action in our environment
                     new_observation, _action, reward, done = self.env.step(action)
@@ -329,16 +332,13 @@ class DQNAgent():
             while not done:
                 #Select Action
                 action = self.choose_action(
-                        observation,
-                        0, #Greedy selection
-                        session,
-                        train=False)
+                        observation=observation,
+                        epsilon=0, #Greedy selection
+                        session=session,
+                        dropout=1.0)
 
                 #Transit to next state given action
-                new_observation, _, _, done = self.env.step(action)
-
-                observation = new_observation
-
+                observation, _, _, done = self.env.step(action)
 
             average_pips_per_trade = self.env.portfolio.total_reward / self.env.portfolio.total_trades
             self.journal_record.append(self.env.portfolio.journal)
@@ -387,7 +387,6 @@ class DQNAgent():
         Receives a new Candle event and perform action
         '''
         while True:
-
             if queue.empty():
                 continue
             event = queue.get()
@@ -399,10 +398,10 @@ class DQNAgent():
             data, states = self.env.simulator.build_data_and_states(HISTORY)
 
             action = self.choose_action(
-                states[-1], #Latest state
-                0, #Greedy selection
-                session,
-                train=False)
+                observation=states[-1], #Latest state
+                epsilon=0, #Greedy selection
+                session=session,
+                dropout=1.0)
 
             #Initiate position with Portfolio object
             self.env.portfolio.newCandleHandler(action)

@@ -2,15 +2,6 @@ import tensorflow as tf
 from tensorflow.contrib import layers
 import numpy as np
 
-from ..settings.DQNsettings import DROPOUT
-
-def huber_loss(error, delta=1.0):
-    return tf.where(
-        tf.abs(error) < delta,
-        tf.square(error) * 0.5,
-        delta * (tf.abs(error) - 0.5 * delta)
-    )
-
 class DQN(object):
     def __init__(self, env, hiddens, scope):
         self.num_actions = env.action_space
@@ -30,8 +21,7 @@ class DQN(object):
             self.current_Q = tf.reduce_sum(self.Q_t * action_one_hot, reduction_indices=1)
 
             #Difference between target_network and online network estimation
-            # huber_loss?
-            error = huber_loss(self.target_q_t - self.current_Q)
+            error = self._huber_loss(self.target_q_t - self.current_Q)
 
             self.loss = tf.reduce_mean(error)
 
@@ -42,7 +32,12 @@ class DQN(object):
             self.optimize = self.trainer.minimize(self.loss, global_step=global_step)
             # create_optimizer end
             self.variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope)
-
+    def _huber_loss(error, delta=1.0):
+        return tf.where(
+            tf.abs(error) < delta,
+            tf.square(error) * 0.5,
+            delta * (tf.abs(error) - 0.5 * delta)
+        )
     def build_q_network(self, hiddens):
         inputs = self.features
 

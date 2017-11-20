@@ -9,21 +9,27 @@ from ..functions.utils import OandaHandler
 
 
 class OandaEnv():
-
-    def __init__(self, INSTRUMENT, granularity, train=True, _isLive=False,
-                 mode='practice', additional_pairs=[],
-                 trade_duration=1, lookback_period=0,
-                 planet_data={}, PLANET_FORWARD_PERIOD=0):
+    def __init__(self,
+                 instrument,
+                 granularity,
+                 train=True,
+                 _isLive=False,
+                 mode='practice',
+                 additional_pairs=[],
+                 trade_duration=1,
+                 lookback_period=0,
+                 planet_data={},
+                 PLANET_FORWARD_PERIOD=0):
 
         assert granularity in GRANULARITIES, "Please use this timeframe format {}".format(GRANULARITIES)
-        assert '_' in INSTRUMENT, "Please define currency pair in this format XXX_XXX"
+        assert '_' in instrument, "Please define currency pair in this format XXX_XXX"
 
         self.api_Handle = OandaHandler(granularity, mode)
-        PRECISION = self.api_Handle.get_instrument_precision(INSTRUMENT)
+        PRECISION = self.api_Handle.get_instrument_precision(instrument)
 
         self.simulator = OandaSimulator(
             handle=self.api_Handle,
-            SYMBOL=INSTRUMENT,
+            instrument=instrument,
             _isLive=_isLive,
             other_pairs=additional_pairs,
             lookback=lookback_period,
@@ -38,14 +44,14 @@ class OandaEnv():
         self.portfolio = Portfolio(
             handle=self.api_Handle,
             DURATION=trade_duration,
-            SYMBOL=INSTRUMENT,
+            instrument=instrument,
             _isLive=_isLive,
             PRECISION=PRECISION)
 
         self.isTraining = train
         self.isLive = _isLive
 
-        self.SYMBOL = INSTRUMENT
+        self.instrument = instrument
         self.action_space = 3
         self.observation_space = self.simulator.states_dim
 
@@ -83,7 +89,7 @@ class OandaEnv():
         while True:
 
             #Get the latest Candle Time
-            latestTime = self.api_Handle.getLatestTime(self.SYMBOL)
+            latestTime = self.api_Handle.getLatestTime(self.instrument)
 
             if latestTime != self.lastRecordedTime:
                 #Only happens when there is a new candle
@@ -108,7 +114,7 @@ class OandaSimulator():
 
         self.api_Handle = kwargs['handle']
 
-        self.SYMBOL = kwargs['SYMBOL']
+        self.instrument = kwargs['instrument']
 
         # Attributes to create state space
         self.other_pairs = kwargs['other_pairs']  # List of other pairs
@@ -180,7 +186,7 @@ class OandaSimulator():
     def build_data_and_states(self, HISTORY):
 
         # Pull primary symbol from Oanda API
-        primary_data = self.api_Handle.get_history(self.SYMBOL, HISTORY)
+        primary_data = self.api_Handle.get_history(self.instrument, HISTORY)
         assert primary_data is not None, "primary_data is not DataFrame"
 
         states_df = pd.DataFrame(index=primary_data.index)
@@ -253,7 +259,7 @@ class Portfolio():
 
         self.DURATION_LIMIT = kwargs['DURATION']
         self.api_Handle = kwargs['handle']
-        self.SYMBOL = kwargs['SYMBOL']
+        self.instrument = kwargs['instrument']
         self.PRECISION = kwargs['PRECISION']
         self.reset()
         self.isLive = kwargs['_isLive']
@@ -305,7 +311,7 @@ class Portfolio():
         if self.isLive:
 
             TYPE = 'BUY' if action == 0 else 'SELL'
-            ID, TIME, PRICE = self.api_Handle.open_position(self.SYMBOL, TYPE)
+            ID, TIME, PRICE = self.api_Handle.open_position(self.instrument, TYPE)
 
             if ID is None or TIME is None or PRICE is None:
                 #Raise Error
@@ -348,11 +354,11 @@ class Portfolio():
 
         if self.isLive:
 
-            SYMBOL = self.curr_trade["Symbol"]
+            instrument = self.curr_trade["Symbol"]
             TYPE = self.curr_trade['Type']
 
             #Close all position in this symbol
-            closeTime, closePrice, pl =self.api_Handle.closeALLposition(SYMBOL, TYPE)
+            closeTime, closePrice, pl =self.api_Handle.closeALLposition(instrument, TYPE)
 
             if closeTime is None or closePrice is None or pl is None:
                 #Didn't Close properly
@@ -409,7 +415,7 @@ class Portfolio():
             'Profit':0,
             'Trade Duration':0,
             'Type':None,
-            'Symbol': self.SYMBOL
+            'Symbol': self.instrument
             }
     def reset(self):
 
@@ -434,8 +440,8 @@ class Portfolio():
 
         if self.isLive:
             ID = self.curr_trade['ID']
-            SYMBOL = self.curr_trade['Symbol']
-            pl = self.api_Handle.getOpenPL(ID, SYMBOL)
+            instrument = self.curr_trade['Symbol']
+            pl = self.api_Handle.getOpenPL(ID, instrument)
 
             self.curr_trade['Profit'] = float(pl)/self.PRECISION
 

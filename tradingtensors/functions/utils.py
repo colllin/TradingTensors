@@ -21,7 +21,6 @@ DEFAULT_HEADERS = {
     'Authorization' :'Bearer ' + TOKEN
 }
 
-
 ############ OANDA REQUEST HANDLER ####################################
 class OandaHandler(object):
     def __init__(self, granularity, mode='practice'):
@@ -92,12 +91,12 @@ class OandaHandler(object):
     '''
     Get the Precision of the instrument
     '''
-    def get_instrument_precision(self, INSTRUMENT):
+    def get_instrument_precision(self, instrument):
 
         QUERY_URL = self.DEFAULT_URL + '/v3/accounts/{}/instruments'.format(ID)
 
         params = {
-            'instruments': INSTRUMENT
+            'instruments': instrument
         }
 
         try:
@@ -129,7 +128,7 @@ class OandaHandler(object):
     Return ENTRY_TIME and ENTRY_PRICE upon success
     Return None otherwise
     '''
-    def open_position(self, INSTRUMENT, TYPE, UNITS=1):
+    def open_position(self, instrument, TYPE, UNITS=1):
         '''
         Open New Position
         Return time and entry_price upon success
@@ -150,14 +149,14 @@ class OandaHandler(object):
                     "units": UNITS,
                     "type": "MARKET",
                     "positionFill": "DEFAULT",
-                    "instrument": INSTRUMENT
+                    "instrument": instrument
             }
         }
         #Make API request
         try:
             response = requests.post(URL, headers=DEFAULT_HEADERS, json=payload)
         except RequestException as e:
-            print ("Failed to complete {} order for {} units of {}".format(TYPE, abs(UNITS), INSTRUMENT))
+            print ("Failed to complete {} order for {} units of {}".format(TYPE, abs(UNITS), instrument))
             return None, None, None
 
 
@@ -165,7 +164,7 @@ class OandaHandler(object):
         if response.status_code != 201:
             print (
                 "HTTP ERROR {}: Failed to complete {} order for {} units of {}".format(
-                response.status_code, TYPE, abs(UNITS), INSTRUMENT)
+                response.status_code, TYPE, abs(UNITS), instrument)
                 )
             return None, None, None
 
@@ -185,15 +184,15 @@ class OandaHandler(object):
         tradeID = transaction['id']
 
         ENTRY_TIME = pd.to_datetime(entry_time).strftime("%Y/%m/%d %H:%M")
-        print("OANDA API: Successfully traded {} units of {} {}".format(UNITS, INSTRUMENT, ENTRY_TIME))
+        print("OANDA API: Successfully traded {} units of {} {}".format(UNITS, instrument, ENTRY_TIME))
         return tradeID, entry_time, entry_price
 
     '''
     Close Positions
     '''
-    def closeALLposition(self, INSTRUMENT, ORDER_TYPE):
+    def closeALLposition(self, instrument, ORDER_TYPE):
 
-        URL = self.DEFAULT_URL + '/v3/accounts/{}/positions/{}/close'.format(ID, INSTRUMENT)
+        URL = self.DEFAULT_URL + '/v3/accounts/{}/positions/{}/close'.format(ID, instrument)
 
         #Existing order is Long or Short
         if ORDER_TYPE == 'SELL':
@@ -221,7 +220,7 @@ class OandaHandler(object):
         pl = _json[_key]["pl"]
 
         EXIT_TIME = pd.to_datetime(exit_time).strftime("%Y/%m/%d %H:%M")
-        print ("OANDA API: Successfully closed ALL positions in {} {}".format(INSTRUMENT, EXIT_TIME))
+        print ("OANDA API: Successfully closed ALL positions in {} {}".format(instrument, EXIT_TIME))
 
         return exit_time, exit_price, float(pl)
 
