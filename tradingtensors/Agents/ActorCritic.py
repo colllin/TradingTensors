@@ -26,7 +26,7 @@ class Brain(object):
 
         self.n_actions = 3 #Number of discrete actions in environment
         self.n_states = states
-        
+
         if isGlobal:
             with tf.variable_scope(name):
                 self.s = tf.placeholder(tf.float32, [None, self.n_states], name='s')
@@ -72,7 +72,7 @@ class Brain(object):
 
                     #Compute Entropy
                     self.entropy = - tf.reduce_sum(self.actor_output * - tf.log(self.actor_output + 1e-13), axis=1, keep_dims=True)
-                    
+
                     #Total Policy Loss: Entropy * coefficient_regularization + pg_loss
                     self.policy_loss = tf.reduce_mean(COEF_REG* self.entropy + self.actor_loss)
 
@@ -81,7 +81,7 @@ class Brain(object):
                     if SHARED:
                         self.total_loss = self.policy_loss + self.value_loss
                         self.grads = tf.gradients(self.total_loss, self.params)
-                    else: 
+                    else:
                         self.actor_grads = tf.gradients(self.policy_loss, self.actor_params)
                         self.critic_grads = tf.gradients(self.value_loss, self.critic_params)
 
@@ -106,24 +106,24 @@ class Brain(object):
         init = tf.random_uniform_initializer(0.,1.)
 
         if SHARED:
-            #Shared layer 
-            
+            #Shared layer
+
             with tf.variable_scope('shared'):
 
                 for i, layer in enumerate(SHARED_LAYER):
                     hidden = layers.dense(
-                        self.s, layer, tf.nn.tanh, 
-                        kernel_initializer=init, 
+                        self.s, layer, tf.nn.tanh,
+                        kernel_initializer=init,
                         kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=L2_REG_LAMBDA),
                         name='layer_%s'%(i+1)
                         )
-                
+
                 with tf.variable_scope('Actor'):
                     a_output = layers.dense(hidden, self.n_actions, tf.nn.softmax, kernel_initializer=init, name='a_out')
 
                 with tf.variable_scope('Critic'):
                     c_output = layers.dense(hidden, 1, kernel_initializer=init, name='c_out')
-            
+
             params = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope= scope + '/shared')
 
             return a_output, c_output, params
@@ -131,31 +131,31 @@ class Brain(object):
         else:
             # Separate Actor and Critic Network
             with tf.variable_scope('Actor'):
-                
+
                 #Create Actor Network
                 for layer in ACTOR_LAYER:
                     a_hidden = layers.dense(
-                        self.s, layer, 
-                        tf.nn.relu6, 
-                        kernel_initializer=init, 
-                        name='a_hidden', 
+                        self.s, layer,
+                        tf.nn.relu6,
+                        kernel_initializer=init,
+                        name='a_hidden',
                         kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=L2_REG_LAMBDA))
-                
+
                 a_output = layers.dense(a_hidden, self.n_actions, tf.nn.softmax, kernel_initializer=init, name='a_out')
 
             with tf.variable_scope('Critic'):
-                
+
                 #Create Critic Network
                 for layer in CRITIC_LAYER:
                     c_hidden = layers.dense(
-                        self.s, 128, 
-                        tf.nn.tanh, 
-                        kernel_initializer=init, 
-                        name='c_hidden', 
+                        self.s, 128,
+                        tf.nn.tanh,
+                        kernel_initializer=init,
+                        name='c_hidden',
                         kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=L2_REG_LAMBDA))
-                
+
                 c_output = layers.dense(c_hidden, 1, kernel_initializer=init, name='c_out')
-            
+
             actor_params = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope= scope + '/Actor')
             critic_params = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope= scope + '/Critic')
 
@@ -172,12 +172,12 @@ class Brain(object):
 
         if SHARED:
             sess.run(self.push_params_op, feed_dict=feed_dict)
-        else:    
+        else:
             sess.run([self.push_actor_params_op, self.push_critic_params_op], feed_dict=feed_dict)
 
 
     def pull_from_global_network(self, sess):
-        #Copy global network to local networks 
+        #Copy global network to local networks
 
         if SHARED:
             sess.run(self.pull_params_op)
@@ -187,7 +187,7 @@ class Brain(object):
     def choose_action(self, sess, s):
 
         policy = sess.run(self.actor_output, feed_dict={
-            self.s: s[np.newaxis,:] 
+            self.s: s[np.newaxis,:]
         })
 
         action = np.random.choice(range(self.n_actions), p=policy.ravel())
@@ -208,9 +208,9 @@ def discount_reward(r, v_tp1):
 
 class Agent(object):
     def __init__(self, name, env, global_network):
-        
+
         self.env = env()
-        
+
         #Define states dimension
         num_states = self.env.observation_space
 
@@ -218,7 +218,7 @@ class Agent(object):
         self.local_brain = Brain(states=num_states, name=self.name, Global_Net=global_network)
 
     def work(
-        self, coord, sess, 
+        self, coord, sess,
         rew_threshold,  MAX_EPISODES=500):
 
         steps = 1
@@ -228,19 +228,19 @@ class Agent(object):
             global GLOBAL_REWARDS
 
             eps_reward = 0
-            
+
             #Store the transition phase
             memory_s, memory_a, memory_r  = [], [], []
-            
+
             #Reset Environment and obtain initial state
             s = self.env.reset(TRAIN=True)
 
             while True:
-                
+
                 a = self.local_brain.choose_action(sess, s)
 
                 s_, a, r, done = self.env.step(a)
-                
+
                 eps_reward += r
 
                 #Store the transition
@@ -249,20 +249,20 @@ class Agent(object):
                 memory_r.append(r)
 
                 if done or (steps % UPDATE_FREQ == 0):
-                    
+
                     #Estimate the Value Function from next state onwards
                     if done:
                         v_tp1 = 0 #Terminal State, set to zero
                     else:
                         v_tp1 = sess.run(self.local_brain.critic_output, feed_dict={self.local_brain.s: s_[np.newaxis,:]}) #Bootstrapped for non-terminal states
 
-                    
+
                     #Apply discount factors to reward
                     value_targets = discount_reward(memory_r, v_tp1)
 
 
                     feed_s, feed_a, feed_v = np.vstack(memory_s), np.array(memory_a), np.vstack(value_targets)
-                    
+
                     #Apply local gradients onto global network (Actor and Critic)
                     self.local_brain.push_to_global_network(sess, feed_s, feed_a, feed_v)
 
@@ -270,7 +270,7 @@ class Agent(object):
                     self.local_brain.pull_from_global_network(sess)
 
                     memory_s, memory_a, memory_r = [], [], []
-                
+
                 #Important!
                 s = s_
                 steps += 1
@@ -298,15 +298,15 @@ class Agent(object):
                         coord.request_stop()
 
                     break
-        
 
+# Asynchronous Actor-Critic Agents (A3C)
 class A3CAgent(object):
 
     def __init__(self, create_env, PATH):
-        
+
         self.env_init = create_env
         self.env = self.env_init()
-    
+
         self.global_net = Brain(
             self.env.observation_space,
             name='Global',
@@ -330,7 +330,7 @@ class A3CAgent(object):
 
 
     def trainGlobalNet(self, REWARD_THRESHOLD, MAX_EPS):
-        
+
         sess= tf.Session()
 
         coord = tf.train.Coordinator()
@@ -343,7 +343,7 @@ class A3CAgent(object):
         for worker in self.workers:
 
             job = lambda: worker.work(
-                coord, sess, 
+                coord, sess,
                 REWARD_THRESHOLD,
                 MAX_EPS
                 )
@@ -356,7 +356,7 @@ class A3CAgent(object):
 
 
         saver.save(sess, self.latest_model)
-        
+
         sess.close()
 
 
@@ -367,9 +367,9 @@ class A3CAgent(object):
         ax.plot(GLOBAL_REWARDS)
         plt.show()
 
-    
+
     def performs(self, TRAIN):
-    
+
         sess = tf.Session()
         saver = tf.train.Saver()
 
@@ -397,7 +397,7 @@ class A3CAgent(object):
         self.avg_reward_record = AVERAGE_PIPS_PER_TRADE
         self.reward_record =self.env.portfolio.total_reward
         self.equity_curve_record = self.env.portfolio.equity_curve
-        
+
         self.summaryPlot()
 
     def summaryPlot(self):
@@ -409,12 +409,12 @@ class A3CAgent(object):
 
         buys = journal.loc[journal['Type']=='BUY', :]
         sells = journal.loc[journal['Type']=='SELL', :]
-        
+
         print ("Summary Statistics (Test)\n")
 
         print ("Total Trades            | {}        (Buy){}       (Sell){} "\
             .format(journal.shape[0], buys.shape[0], sells.shape[0]))
-        
+
         #Calculate Profit breakdown
         total_profit = journal.Profit.sum()
         buy_profit = buys.Profit.sum()
@@ -427,8 +427,8 @@ class A3CAgent(object):
         total_percent = (journal.loc[journal['Profit']>0,'Profit'].count()/ journal.shape[0]) * 100
         buy_percent = (buys.loc[buys['Profit']>0, 'Profit'].count()/buys.shape[0]) * 100
         sell_percent = (sells.loc[sells['Profit']>0, 'Profit'].count()/sells.shape[0]) * 100
-        print ("Win Ratio               | %.2f%%    (Buy)%.2f%%   (Sell)%.2f %%"%(total_percent, buy_percent, sell_percent))            
-        
+        print ("Win Ratio               | %.2f%%    (Buy)%.2f%%   (Sell)%.2f %%"%(total_percent, buy_percent, sell_percent))
+
         #Duration
         duration = journal['Trade Duration'].mean()
         print ("Average Trade Duration  | %.2f"%(duration))
@@ -445,7 +445,7 @@ class A3CAgent(object):
 
         #Initialize the time of the current incomplete candle
         #Set True if start trading on current candle, (Not Recommended during Market Close)
-        if tradeFirst: 
+        if tradeFirst:
             self.env.lastRecordedTime = None
         else:
             self.env.lastRecordedTime = self.env.api_Handle.getLatestTime(self.env.SYMBOL)
@@ -455,7 +455,7 @@ class A3CAgent(object):
         saver = tf.train.Saver()
         saver.restore(sess, self.latest_model)
 
-        #Initiate an event stack 
+        #Initiate an event stack
         events_q = LifoQueue(maxsize=1)
 
         listenerThread = Thread(target=self.env.candleListener, args=(events_q,))
@@ -476,7 +476,7 @@ class A3CAgent(object):
                 event = queue.get()
 
                 if event == 'New Candle':
-                    
+
                     #Generate state from candle
                     data, states = self.env.sim.build_data_and_states(HISTORY)
 
