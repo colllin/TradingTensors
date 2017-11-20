@@ -21,7 +21,6 @@ GLOBAL_REWARDS = []
 #Architecture of the Actor-Critic Network
 class Brain(object):
     def __init__(self, states, name, Global_Net=None, isGlobal=False):
-
         self.n_actions = 3 #Number of discrete actions in environment
         self.n_states = states
 
@@ -274,7 +273,7 @@ class Agent(object):
                 steps += 1
 
                 if done:
-                    if self.env.portfolio.isHoldingTrade():
+                    if self.env.portfolio._isHoldingTrade:
                         lastTime = self.env.simulator.data.index[self.env.simulator.curr_idx].to_pydatetime()
                         lastOpen = self.env.simulator.data['Open'].iloc[self.env.simulator.curr_idx]
                         self.env.portfolio.closeTrade(TIME=lastTime, OPEN=lastOpen)
@@ -380,7 +379,7 @@ class A3CAgent(object):
 
             obs = next_obs
 
-        if self.env.portfolio.isHoldingTrade():
+        if self.env.portfolio._isHoldingTrade:
             lastTime = self.env.simulator.data.index[self.env.simulator.curr_idx].to_pydatetime()
             lastOpen = self.env.simulator.data['Open'].iloc[self.env.simulator.curr_idx]
             self.env.portfolio.closeTrade(TIME=lastTime, OPEN=lastOpen)
@@ -429,57 +428,3 @@ class A3CAgent(object):
 
 
         ohlcPlot(self.journal_record, self.env.simulator.data, self.equity_curve_record)
-
-
-    def liveTrading(self, HISTORY=20, tradeFirst=False):
-
-        self.env.setLive()
-
-        self.env.portfolio.reset()
-
-        #Initialize the time of the current incomplete candle
-        #Set True if start trading on current candle, (Not Recommended during Market Close)
-        if tradeFirst:
-            self.env.lastRecordedTime = None
-        else:
-            self.env.lastRecordedTime = self.env.api_Handle.getLatestTime(self.env.SYMBOL)
-
-        #Tensorflow session with Chosen Model
-        session = tf.Session()
-        saver = tf.train.Saver()
-        saver.restore(session, self.latest_model)
-
-        #Initiate an event stack
-        events_q = LifoQueue(maxsize=1)
-
-        listenerThread = Thread(target=self.env.candleListener, args=(events_q,))
-        handlerThread = Thread(target=self.newCandleHandler, args=(events_q, session))
-
-        #Start threads
-        listenerThread.start()
-        handlerThread.start()
-
-
-    def newCandleHandler(self, queue, SESS, HISTORY=20):
-        '''
-        Function that retrieves data from Oanda, generate states and open position
-        '''
-        while True:
-
-            if not queue.empty():
-                event = queue.get()
-
-                if event == 'New Candle':
-
-                    #Generate state from candle
-                    data, states = self.env.simulator.build_data_and_states(HISTORY)
-
-                    ACTION = self.global_net.choose_action(SESS, states[-1])
-
-                    #Initiate position with Porfolio object
-                    self.env.portfolio.newCandleHandler(ACTION)
-
-
-                    if ACTION == 2:
-                        print ("No action taken, Agent idles")
-                    queue.task_done()

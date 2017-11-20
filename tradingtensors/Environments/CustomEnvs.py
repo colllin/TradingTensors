@@ -13,7 +13,6 @@ class OandaEnv():
                  instrument,
                  granularity,
                  train=True,
-                 _isLive=False,
                  mode='practice',
                  additional_pairs=[],
                  trade_duration=1,
@@ -30,7 +29,6 @@ class OandaEnv():
         self.simulator = OandaSimulator(
             handle=self.api_Handle,
             instrument=instrument,
-            _isLive=_isLive,
             other_pairs=additional_pairs,
             lookback=lookback_period,
             train_split=TRAIN_SPLIT,
@@ -45,11 +43,9 @@ class OandaEnv():
             handle=self.api_Handle,
             DURATION=trade_duration,
             instrument=instrument,
-            _isLive=_isLive,
             PRECISION=PRECISION)
 
         self.isTraining = train
-        self.isLive = _isLive
 
         self.instrument = instrument
         self.action_space = 3
@@ -71,43 +67,6 @@ class OandaEnv():
 
         return observation
 
-    '''Live Trading Functionalities
-    A Threaded implementation
-    '''
-    def setLive(self):
-        self.isLive = True
-        self.lastRecordedTime = None
-
-    def candleListener(self, events):
-        '''
-        A function to detect appearance of New Candle
-        Before this function, call setLive function
-        '''
-
-        self.ListenerIsAlive = True
-
-        while True:
-
-            #Get the latest Candle Time
-            latestTime = self.api_Handle.getLatestTime(self.instrument)
-
-            if latestTime != self.lastRecordedTime:
-                #Only happens when there is a new candle
-                self.lastRecordedTime = latestTime
-
-                print ("New Candle detected at %s"%(latestTime))
-
-                #Put Event in the queue
-                events.put("New Candle")
-
-                #Block the queue until all texts are processed
-                events.join()
-
-                # Sleep Every 5 MINUTES
-                time.sleep(300)
-
-
-
 class OandaSimulator():
 
     def __init__(self, **kwargs):
@@ -115,26 +74,19 @@ class OandaSimulator():
         self.api_Handle = kwargs['handle']
 
         self.instrument = kwargs['instrument']
-
         # Attributes to create state space
         self.other_pairs = kwargs['other_pairs']  # List of other pairs
         self.LOOKBACK = kwargs['lookback']  # how many periods to lookback
         self.planet_args = [kwargs['planet_data'], kwargs['PLANET_PERIOD']]
-
 
         # Attributes for training model
         # Percentage of data to be used for training, to be used in
         self.TRAIN_SPLIT = kwargs['train_split']
         self.isTraining = kwargs['isTraining']  # Controlled by Environment
 
-        # Attributes to interact with live market
-        self.isLive = kwargs['_isLive']  # Flag: if True, we are trading live
-
-
         #For Normalization
         self.train_mean = None
         self.train_std = None
-
 
         self.data, self.states = self.build_data_and_states(SYMBOL_HISTORY)
         self.states_dim = self.states.shape[1]
@@ -142,7 +94,6 @@ class OandaSimulator():
         #To be used in every step of Simulator
         self.Open = self.data.Open.values
         self.Dates = self.data.index.to_pydatetime().tolist()
-
 
         #Reward: (CLOSE - OPEN) / (0.0001)
         PRECISION = kwargs['PRECISION']
@@ -169,14 +120,12 @@ class OandaSimulator():
     Return the first instance
     '''
     def reset(self):
-
         if self.isTraining:
             self.curr_idx = self.train_start_idx
             self.end_idx = self.train_end_idx
         else:
             self.curr_idx = self.test_start_idx
             self.end_idx = self.test_end_idx
-
         '''Edge Case: Step function will cross boundary of data '''
         if self.curr_idx == self.end_idx:
             raise Exception("Please use more history!")
@@ -184,7 +133,6 @@ class OandaSimulator():
         #Return the first instance of the state space
         return self.states[self.curr_idx]
     def build_data_and_states(self, HISTORY):
-
         # Pull primary symbol from Oanda API
         primary_data = self.api_Handle.get_history(self.instrument, HISTORY)
         assert primary_data is not None, "primary_data is not DataFrame"
@@ -227,13 +175,11 @@ class OandaSimulator():
 
     '''States Normalization'''
     def normalize_states(self, states):
-
         if self.train_mean is None or self.train_std is None:
             self.train_mean = np.mean(states, 0)
             self.train_std = np.std(states, 0)
 
-        transformed = (states - self.train_mean)/self.train_std
-
+        transformed = (states - self.train_mean) / self.train_std
         return transformed
 
     def step(self):
@@ -262,24 +208,18 @@ class Portfolio():
         self.instrument = kwargs['instrument']
         self.PRECISION = kwargs['PRECISION']
         self.reset()
-        self.isLive = kwargs['_isLive']
     def newCandleHandler(self, ACTION, **kwargs):
         '''
-        In Live mode, step doesnt return anything
         IN Training/Testing mode, step returns action and reward
-
         TRAIN/TEST MODE:
         kwargs = {
             'TIME' : curr_time,
             'OPEN' :curr_open,
             'REWARD': reward
         }
-
-        LIVE MODE:
-        kwargs ={}
         '''
 
-        if self.isHoldingTrade():
+        if self._isHoldingTrade:
             #Increase trade duration
             self.curr_trade['Trade Duration'] += 1
 
@@ -308,103 +248,48 @@ class Portfolio():
 
     def openTrade(self, action, **kwargs):
         self.total_trades += 1
-        if self.isLive:
+        #Train/Test Mode
+        #Set cur_trade
+        self.curr_trade['ID'] = self.total_trades
+        TYPE = 'BUY' if action == 0 else 'SELL'
+        self.curr_trade['Type'] = TYPE
 
-            TYPE = 'BUY' if action == 0 else 'SELL'
-            ID, TIME, PRICE = self.api_Handle.open_position(self.instrument, TYPE)
+        #Set Price and Time
+        self.curr_trade['Entry Time'] = kwargs['TIME']
+        self.curr_trade['Entry Price'] = kwargs['OPEN']
 
-            if ID is None or TIME is None or PRICE is None:
-                #Raise Error
-                print ("Failed to initiate trade")
-                return
-            TIME = pd.to_datetime(TIME).to_pydatetime()
-            self.curr_trade['Entry Time'] = TIME
-            self.curr_trade['Entry Price'] = PRICE
-            self.curr_trade['ID'] = ID
-            self.curr_trade['Type'] = TYPE
-        else:
-            #Train/Test Mode
-            #Set cur_trade
-            self.curr_trade['ID'] = self.total_trades
-            TYPE = 'BUY' if action == 0 else 'SELL'
-            self.curr_trade['Type'] = TYPE
-
-            #Set Price and Time
-            self.curr_trade['Entry Time'] = kwargs['TIME']
-            self.curr_trade['Entry Price'] = kwargs['OPEN']
-
-            #Manipulate reward
-            rew = kwargs['REWARD']
-            multiplier = 1.0 if self.curr_trade['Type'] == 'BUY' else -1.0
-            REWARD = rew * multiplier
+        #Manipulate reward
+        rew = kwargs['REWARD']
+        multiplier = 1.0 if self.curr_trade['Type'] == 'BUY' else -1.0
+        REWARD = rew * multiplier
 
 
-            #Accumulate reward
-            self.curr_trade['Profit'] += REWARD
-            self.total_reward += REWARD
+        #Accumulate reward
+        self.curr_trade['Profit'] += REWARD
+        self.total_reward += REWARD
 
-            #Update Equity
-            self.equity_curve.append(self.total_reward)
+        #Update Equity
+        self.equity_curve.append(self.total_reward)
 
-            self._isHoldingTrade = True
-            return action, REWARD
+        self._isHoldingTrade = True
+        return action, REWARD
 
 
     def closeTrade(self, **kwargs):
+        #Close the trade in Train/Test Mode
+        self.curr_trade['Exit Time'] = kwargs['TIME']
+        self.curr_trade['Exit Price'] = kwargs['OPEN']
 
-        if self.isLive:
+        #Recalculate reward based on this open (More accurate) thisOpen - EntryPrice
+        #Or we could leave curr_trade['Profit'] = lastClose - EntryPrice
+        '''
+        multiplier = 1.0 if self.curr_trade['Type'] == 'BUY' else -1.0
+        self.curr_trade['Profit'] = multiplier * \
+        (self.curr_trade['Exit Price'] - self.curr_trade['Entry Price'])
+        '''
+        self.journal.append(self.curr_trade)
+        self.reset_trade()
 
-            instrument = self.curr_trade["Symbol"]
-            TYPE = self.curr_trade['Type']
-
-            #Close all position in this symbol
-            closeTime, closePrice, pl =self.api_Handle.closeALLposition(instrument, TYPE)
-
-            if closeTime is None or closePrice is None or pl is None:
-                #Didn't Close properly
-                self.continueHolding()
-
-            #Close successfully
-            #Update curr_trade
-            closeTime = pd.to_datetime(closeTime).to_pydatetime()
-            self.curr_trade['Exit Time'] = closeTime
-            self.curr_trade['Exit Price'] = closePrice
-            self.curr_trade['Profit'] = pl/self.PRECISION
-
-            self.journal.append(self.curr_trade)
-
-            print (self.curr_trade)
-
-            #reset curr_trade
-            self.reset_trade()
-
-        else:
-
-            #Close the trade in Train/Test Mode
-            self.curr_trade['Exit Time'] = kwargs['TIME']
-            self.curr_trade['Exit Price'] = kwargs['OPEN']
-
-            #Recalculate reward based on this open (More accurate) thisOpen - EntryPrice
-            #Or we could leave curr_trade['Profit'] = lastClose - EntryPrice
-            '''
-            multiplier = 1.0 if self.curr_trade['Type'] == 'BUY' else -1.0
-            self.curr_trade['Profit'] = multiplier * \
-            (self.curr_trade['Exit Price'] - self.curr_trade['Entry Price'])
-            '''
-            self.journal.append(self.curr_trade)
-            self.reset_trade()
-
-            self._isHoldingTrade = False
-
-    def isHoldingTrade(self):
-        if self.isLive:
-            #curr_trade should have a record
-            TRADE_ID = self.curr_trade["ID"]
-            if TRADE_ID == 0:
-                self._isHoldingTrade = False
-            else:
-                self._isHoldingTrade = self.api_Handle.isTradeOpen(TRADE_ID)
-        return self._isHoldingTrade
     def reset_trade(self):
         self.curr_trade = {
             'ID':0,
@@ -417,6 +302,7 @@ class Portfolio():
             'Type':None,
             'Symbol': self.instrument
             }
+        self._isHoldingTrade = False
     def reset(self):
 
         #Cumulative reward in this run (in pips)
@@ -434,20 +320,7 @@ class Portfolio():
         self.reset_trade()
         self.journal = [] #Collection of trades
 
-        #Flag to check if there are any existing positions
-        self._isHoldingTrade = False
     def continueHolding(self, **kwargs):
-
-        if self.isLive:
-            ID = self.curr_trade['ID']
-            instrument = self.curr_trade['Symbol']
-            pl = self.api_Handle.getOpenPL(ID, instrument)
-
-            self.curr_trade['Profit'] = float(pl)/self.PRECISION
-
-            self.equity_curve.append(self.curr_trade['Profit'])
-            return
-
         #Reset the action
         ACTION = 2
 
