@@ -11,7 +11,6 @@ def huber_loss(error, delta=1.0):
         delta * (tf.abs(error) - 0.5 * delta)
     )
 
-
 class DQN(object):
     def __init__(self, env, hiddens, scope):
         self.num_actions = env.action_space
@@ -30,7 +29,6 @@ class DQN(object):
             action_one_hot = tf.one_hot(self.action, env.action_space, 1.0, 0.0)
             self.current_Q = tf.reduce_sum(self.Q_t * action_one_hot, reduction_indices=1)
 
-
             #Difference between target_network and online network estimation
             # huber_loss?
             error = huber_loss(self.target_q_t - self.current_Q)
@@ -43,25 +41,22 @@ class DQN(object):
             self.trainer = tf.train.AdamOptimizer(learning_rate=learning_rate)
             self.optimize = self.trainer.minimize(self.loss, global_step=global_step)
             # create_optimizer end
-
             self.variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope)
 
     def build_q_network(self, hiddens):
         inputs = self.features
 
         for hidden in hiddens:
-            inputs= layers.fully_connected(
+            inputs = layers.fully_connected(
                 inputs=inputs,
                 num_outputs= hidden,
                 activation_fn=tf.tanh,
                 weights_regularizer=layers.l2_regularizer(scale=0.1))
             inputs = tf.nn.dropout(inputs, self.dropout)
-
         self.Q_t = layers.fully_connected(inputs, self.num_actions, activation_fn=None)
         self.Q_action = tf.argmax(self.Q_t, axis=1)
 
 class ReplayBuffer(object):
-
     def __init__(self, capacity):
         self.capacity = capacity
         self.storage = []
@@ -85,9 +80,7 @@ class ReplayBuffer(object):
 
         #Regroup every sample into different lists
         for i in index:
-
             _sample = self.storage[i]
-
             observation.append(_sample[0])
             actions.append(_sample[1])
             rewards.append(_sample[2])
@@ -101,13 +94,3 @@ class ReplayBuffer(object):
         terminal = np.array(terminal)
 
         return observation, actions, rewards, next_observation, terminal
-
-
-def LinearDecay(value, total_steps, initial_p, final_p):
-    '''Linearly decay epsilon'''
-    if value >= total_steps:
-        return final_p
-    if total_steps > 0:
-        difference = (final_p - initial_p) / total_steps
-    return initial_p + difference *value
-

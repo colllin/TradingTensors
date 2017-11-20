@@ -9,7 +9,7 @@ import pandas as pd
 import tensorflow as tf
 
 from ..settings.DQNsettings import (FINAL_P, GAMMA, INITIAL_P, UPDATE_FREQUENCY, DROPOUT)
-from .BaseQ import (DQN, LinearDecay, ReplayBuffer)
+from .BaseQ import (DQN, ReplayBuffer)
 from .visual_utils import ohlcPlot, rewardPlot
 
 class DQNAgent():
@@ -141,25 +141,25 @@ class DQNAgent():
                 while not done:
 
                     #Pick the decayed epsilon value
-                    exploration = LinearDecay(
-                        t,
-                        EPISODES_TO_EXPLORE * steps_per_episode,
-                        INITIAL_P,
-                        FINAL_P)
+                    # linear decay
+                    total_steps = EPISODES_TO_EXPLORE * steps_per_episode
+                    '''Linearly decay epsilon'''
+                    if t >= total_steps:
+                        exploration =  FINAL_P
+                    else :
+                        if total_steps > 0:
+                            difference = (FINAL_P - INITIAL_P) / total_steps
+                        exploration =  INITIAL_P + difference * t
+                    # linear decay end
 
                     #Pick an action using online network
-                    action = self.choose_action(
-                        observation,
-                        exploration,
-                        session,
-                        train=True)
+                    action = self.choose_action(observation, exploration, session, train=True)
 
                     #Advance one step with the action in our environment
                     new_observation, _action, reward, done = self.env.step(action)
 
                     #Add the Experience to the memory
                     replaybuffer.add(observation, _action, reward, new_observation, float(done))
-
 
                     observation = new_observation
                     t += 1
@@ -255,7 +255,6 @@ class DQNAgent():
 
                 if SOLVED:
                     print ("CONVERGED!")
-                    print ()
                     break
 
         self.best_models = top_10s
@@ -328,7 +327,6 @@ class DQNAgent():
             done = False
 
             while not done:
-
                 #Select Action
                 action = self.choose_action(
                         observation,
@@ -347,10 +345,7 @@ class DQNAgent():
             self.avg_reward_record.append(average_pips_per_trade)
             self.reward_record.append(self.env.portfolio.total_reward)
             self.equity_curve_record.append(self.env.portfolio.equity_curve)
-
-
             self.episodeReview(0)
-
 
     def liveTrading(self, episode, HISTORY=20, tradeFirst=False):
         '''
@@ -386,7 +381,6 @@ class DQNAgent():
         #Start threads
         listenerThread.start()
         handlerThread.start()
-
 
     def newCandleHandler(self, queue, session, HISTORY=20):
         '''

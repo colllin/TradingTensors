@@ -18,8 +18,6 @@ from .visual_utils import ohlcPlot
 
 GLOBAL_REWARDS = []
 
-
-
 #Architecture of the Actor-Critic Network
 class Brain(object):
     def __init__(self, states, name, Global_Net=None, isGlobal=False):
@@ -161,7 +159,7 @@ class Brain(object):
 
             return a_output, c_output, actor_params, critic_params
 
-    def push_to_global_network(self, sess, feed_s, feed_a, feed_v):
+    def push_to_global_network(self, session, feed_s, feed_a, feed_v):
         #Apply local gradients to the global network
 
         feed_dict = {
@@ -171,22 +169,22 @@ class Brain(object):
         }
 
         if SHARED:
-            sess.run(self.push_params_op, feed_dict=feed_dict)
+            session.run(self.push_params_op, feed_dict=feed_dict)
         else:
-            sess.run([self.push_actor_params_op, self.push_critic_params_op], feed_dict=feed_dict)
+            session.run([self.push_actor_params_op, self.push_critic_params_op], feed_dict=feed_dict)
 
 
-    def pull_from_global_network(self, sess):
+    def pull_from_global_network(self, session):
         #Copy global network to local networks
 
         if SHARED:
-            sess.run(self.pull_params_op)
+            session.run(self.pull_params_op)
         else:
-            sess.run([self.pull_actor_params_op, self.pull_critic_params_op])
+            session.run([self.pull_actor_params_op, self.pull_critic_params_op])
 
-    def choose_action(self, sess, s):
+    def choose_action(self, session, s):
 
-        policy = sess.run(self.actor_output, feed_dict={
+        policy = session.run(self.actor_output, feed_dict={
             self.s: s[np.newaxis,:]
         })
 
@@ -218,7 +216,7 @@ class Agent(object):
         self.local_brain = Brain(states=num_states, name=self.name, Global_Net=global_network)
 
     def work(
-        self, coord, sess,
+        self, coord, session,
         rew_threshold,  MAX_EPISODES=500):
 
         steps = 1
@@ -237,7 +235,7 @@ class Agent(object):
 
             while True:
 
-                a = self.local_brain.choose_action(sess, s)
+                a = self.local_brain.choose_action(session, s)
 
                 s_, a, r, done = self.env.step(a)
 
@@ -254,7 +252,7 @@ class Agent(object):
                     if done:
                         v_tp1 = 0 #Terminal State, set to zero
                     else:
-                        v_tp1 = sess.run(self.local_brain.critic_output, feed_dict={self.local_brain.s: s_[np.newaxis,:]}) #Bootstrapped for non-terminal states
+                        v_tp1 = session.run(self.local_brain.critic_output, feed_dict={self.local_brain.s: s_[np.newaxis,:]}) #Bootstrapped for non-terminal states
 
 
                     #Apply discount factors to reward
@@ -264,10 +262,10 @@ class Agent(object):
                     feed_s, feed_a, feed_v = np.vstack(memory_s), np.array(memory_a), np.vstack(value_targets)
 
                     #Apply local gradients onto global network (Actor and Critic)
-                    self.local_brain.push_to_global_network(sess, feed_s, feed_a, feed_v)
+                    self.local_brain.push_to_global_network(session, feed_s, feed_a, feed_v)
 
                     #Use the updated params from global network
-                    self.local_brain.pull_from_global_network(sess)
+                    self.local_brain.pull_from_global_network(session)
 
                     memory_s, memory_a, memory_r = [], [], []
 
@@ -277,8 +275,8 @@ class Agent(object):
 
                 if done:
                     if self.env.portfolio.isHoldingTrade():
-                        lastTime = self.env.sim.data.index[self.env.sim.curr_idx].to_pydatetime()
-                        lastOpen = self.env.sim.data['Open'].iloc[self.env.sim.curr_idx]
+                        lastTime = self.env.simulator.data.index[self.env.simulator.curr_idx].to_pydatetime()
+                        lastOpen = self.env.simulator.data['Open'].iloc[self.env.simulator.curr_idx]
                         self.env.portfolio.closeTrade(TIME=lastTime, OPEN=lastOpen)
 
                     #Use portfolio reward tracker for greater accuracy
@@ -331,11 +329,9 @@ class A3CAgent(object):
 
     def trainGlobalNet(self, REWARD_THRESHOLD, MAX_EPS):
 
-        sess= tf.Session()
-
+        session= tf.Session()
         coord = tf.train.Coordinator()
-        sess.run(tf.global_variables_initializer())
-
+        session.run(tf.global_variables_initializer())
         saver = tf.train.Saver()
 
         tasks = []
@@ -343,7 +339,8 @@ class A3CAgent(object):
         for worker in self.workers:
 
             job = lambda: worker.work(
-                coord, sess,
+                coord,
+                session,
                 REWARD_THRESHOLD,
                 MAX_EPS
                 )
@@ -353,11 +350,8 @@ class A3CAgent(object):
 
         #Wait for all threads to finish training
         coord.join(tasks)
-
-
-        saver.save(sess, self.latest_model)
-
-        sess.close()
+        saver.save(session, self.latest_model)
+        session.close()
 
 
     def trainSummary(self):
@@ -370,25 +364,25 @@ class A3CAgent(object):
 
     def performs(self, TRAIN):
 
-        sess = tf.Session()
+        session = tf.Session()
         saver = tf.train.Saver()
 
-        saver.restore(sess, self.latest_model)
+        saver.restore(session, self.latest_model)
 
         obs = self.env.reset(TRAIN=TRAIN)
         DONE = False
 
         while not DONE:
 
-            ACTION = self.global_net.choose_action(sess, obs)
+            ACTION = self.global_net.choose_action(session, obs)
 
             next_obs, _, _, DONE = self.env.step(ACTION)
 
             obs = next_obs
 
         if self.env.portfolio.isHoldingTrade():
-            lastTime = self.env.sim.data.index[self.env.sim.curr_idx].to_pydatetime()
-            lastOpen = self.env.sim.data['Open'].iloc[self.env.sim.curr_idx]
+            lastTime = self.env.simulator.data.index[self.env.simulator.curr_idx].to_pydatetime()
+            lastOpen = self.env.simulator.data['Open'].iloc[self.env.simulator.curr_idx]
             self.env.portfolio.closeTrade(TIME=lastTime, OPEN=lastOpen)
 
 
@@ -434,7 +428,7 @@ class A3CAgent(object):
         print ("Average Trade Duration  | %.2f"%(duration))
 
 
-        ohlcPlot(self.journal_record, self.env.sim.data, self.equity_curve_record)
+        ohlcPlot(self.journal_record, self.env.simulator.data, self.equity_curve_record)
 
 
     def liveTrading(self, HISTORY=20, tradeFirst=False):
@@ -451,15 +445,15 @@ class A3CAgent(object):
             self.env.lastRecordedTime = self.env.api_Handle.getLatestTime(self.env.SYMBOL)
 
         #Tensorflow session with Chosen Model
-        sess = tf.Session()
+        session = tf.Session()
         saver = tf.train.Saver()
-        saver.restore(sess, self.latest_model)
+        saver.restore(session, self.latest_model)
 
         #Initiate an event stack
         events_q = LifoQueue(maxsize=1)
 
         listenerThread = Thread(target=self.env.candleListener, args=(events_q,))
-        handlerThread = Thread(target=self.newCandleHandler, args=(events_q, sess))
+        handlerThread = Thread(target=self.newCandleHandler, args=(events_q, session))
 
         #Start threads
         listenerThread.start()
@@ -478,7 +472,7 @@ class A3CAgent(object):
                 if event == 'New Candle':
 
                     #Generate state from candle
-                    data, states = self.env.sim.build_data_and_states(HISTORY)
+                    data, states = self.env.simulator.build_data_and_states(HISTORY)
 
                     ACTION = self.global_net.choose_action(SESS, states[-1])
 
