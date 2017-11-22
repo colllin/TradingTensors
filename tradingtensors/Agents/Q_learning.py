@@ -57,7 +57,8 @@ class DQNAgent():
             whole_steps,
             EPISODES_TO_EXPLORE,
             steps_per_episode,
-            replaybuffer):
+            replaybuffer,
+            CONVERGENCE_THRESHOLD):
         #Pick the decayed epsilon value
         # linear decay
         total_steps = EPISODES_TO_EXPLORE * steps_per_episode
@@ -183,7 +184,8 @@ class DQNAgent():
                     whole_steps,
                     EPISODES_TO_EXPLORE,
                     steps_per_episode,
-                    replaybuffer)
+                    replaybuffer,
+                    CONVERGENCE_THRESHOLD)
             if solved:
                 print ("CONVERGED!")
                 break
