@@ -137,7 +137,7 @@ class DQNAgent():
 
             for episode in range(1, train_episodes+1):
 
-                observation = self.env.reset(TRAIN=True)
+                observation = self.env.reset(train=True)
 
                 done, SOLVED = False, False
 
@@ -326,7 +326,7 @@ class DQNAgent():
             saver = tf.train.Saver()
             saver.restore(session, model_file)
 
-            observation = self.env.reset(TRAIN=False)
+            observation = self.env.reset(train=False)
             done = False
 
             while not done:

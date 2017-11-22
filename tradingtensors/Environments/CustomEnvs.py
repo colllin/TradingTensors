@@ -64,8 +64,9 @@ class OandaEnv():
 
         return new_obs, ACTION, reward, done
 
-    def reset(self, TRAIN):
-        self.isTraining = TRAIN
+    def reset(self, train):
+        self.isTraining = train
+        self.simulator.isTraining = train
         observation = self.simulator.reset()
         self.portfolio.reset()
 

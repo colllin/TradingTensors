@@ -231,7 +231,7 @@ class Agent(object):
             memory_s, memory_a, memory_r  = [], [], []
 
             #Reset Environment and obtain initial state
-            s = self.env.reset(TRAIN=True)
+            s = self.env.reset(train=True)
 
             while True:
 
@@ -362,14 +362,14 @@ class A3CAgent(object):
         plt.show()
 
 
-    def performs(self, TRAIN):
+    def performs(self, train):
 
         session = tf.Session()
         saver = tf.train.Saver()
 
         saver.restore(session, self.latest_model)
 
-        obs = self.env.reset(TRAIN=TRAIN)
+        obs = self.env.reset(train=train)
         DONE = False
 
         while not DONE:
