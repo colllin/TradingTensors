@@ -24,7 +24,7 @@ class OandaEnv():
         assert '_' in instrument, "Please define currency pair in this format XXX_XXX"
 
         self.api_Handle = OandaHandler(granularity, mode)
-        PRECISION = self.api_Handle.get_instrument_precision(instrument)
+        precision = self.api_Handle.get_instrument_precision(instrument)
 
         self.simulator = OandaSimulator(
             handle=self.api_Handle,
@@ -32,7 +32,7 @@ class OandaEnv():
             other_pairs=other_pairs,
             lookback=lookback_period,
             isTraining=train,
-            PRECISION=PRECISION,
+            precision=precision,
             # Planet Data for Mr Peter's version
             planet_data=planet_data,
             PLANET_PERIOD=PLANET_FORWARD_PERIOD
@@ -40,9 +40,8 @@ class OandaEnv():
 
         self.portfolio = Portfolio(
             handle=self.api_Handle,
-            DURATION=trade_duration,
-            instrument=instrument,
-            PRECISION=PRECISION)
+            trade_duration=trade_duration,
+            instrument=instrument)
 
         self.isTraining = train
 
@@ -95,8 +94,8 @@ class OandaSimulator():
         self.Dates = self.data.index.to_pydatetime().tolist()
 
         #Reward: (CLOSE - OPEN) / (0.0001)
-        PRECISION = kwargs['PRECISION']
-        self.reward_pips = (self.data['Close'] - self.data['Open']).values / PRECISION
+        precision = kwargs['precision']
+        self.reward_pips = (self.data['Close'] - self.data['Open']).values / precision
 
         '''
         Define the first and last index of states during training
@@ -202,10 +201,9 @@ class Portfolio():
     '''
     def __init__(self, **kwargs):
 
-        self.DURATION_LIMIT = kwargs['DURATION']
+        self.trade_duration = kwargs['trade_duration']
         self.api_Handle = kwargs['handle']
         self.instrument = kwargs['instrument']
-        self.PRECISION = kwargs['PRECISION']
         self.reset()
     def newCandleHandler(self, ACTION, **kwargs):
         '''
@@ -223,7 +221,7 @@ class Portfolio():
             self.curr_trade['Trade Duration'] += 1
 
             #Check if duration limit is reached
-            reached = self.curr_trade['Trade Duration'] >= self.DURATION_LIMIT
+            reached = self.curr_trade['Trade Duration'] >= self.trade_duration
 
             if reached:
                 #Close Trade
