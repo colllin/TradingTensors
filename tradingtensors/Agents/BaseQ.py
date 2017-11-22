@@ -14,12 +14,20 @@ def huber_loss(error, delta=1.0):
 
 class DQN(object):
     def __init__(self, env, hiddens, scope_name):
-        self.num_actions = env.action_space
         with tf.variable_scope(scope_name):
             self.features = tf.placeholder(tf.float32, [None, env.observation_space])
             self.dropout = tf.placeholder(tf.float32)
 
-            self.build_q_network(hiddens)
+            inputs = self.features
+            for hidden in hiddens:
+                inputs = layers.fully_connected(
+                    inputs=inputs,
+                    num_outputs= hidden,
+                    activation_fn = tf.tanh,
+                    weights_regularizer = layers.l2_regularizer(scale=0.1))
+                inputs = tf.nn.dropout(inputs, self.dropout)
+            self.Q_t = layers.fully_connected(inputs, env.action_space, activation_fn=None)
+            self.Q_action = tf.argmax(self.Q_t, axis=1)
 
             # create_optimizer
             #Placeholder to hold values for Q_values estimated by target_network
@@ -28,11 +36,10 @@ class DQN(object):
             #Compute current_Q estimation using online network, states and action are drawn from training batch
             self.action = tf.placeholder(tf.int64, [None])
             action_one_hot = tf.one_hot(self.action, env.action_space, 1.0, 0.0)
-            self.current_Q = tf.reduce_sum(self.Q_t * action_one_hot, reduction_indices=1)
+            current_Q = tf.reduce_sum(self.Q_t * action_one_hot, reduction_indices=1)
 
             #Difference between target_network and online network estimation
-            # huber_loss?
-            error = huber_loss(self.target_q_t - self.current_Q)
+            error = huber_loss(self.target_q_t - current_Q)
 
             self.loss = tf.reduce_mean(error)
 
@@ -43,18 +50,6 @@ class DQN(object):
             self.optimize = self.trainer.minimize(self.loss, global_step=global_step)
             # create_optimizer end
             self.variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope_name)
-
-    def build_q_network(self, hiddens):
-        features = self.features
-        for hidden in hiddens:
-            features = layers.fully_connected(
-                inputs=features,
-                num_outputs= hidden,
-                activation_fn = tf.tanh,
-                weights_regularizer = layers.l2_regularizer(scale=0.1))
-            features = tf.nn.dropout(features, self.dropout)
-        self.Q_t = layers.fully_connected(features, self.num_actions, activation_fn=None)
-        self.Q_action = tf.argmax(self.Q_t, axis=1)
 
 class ReplayBuffer(object):
     def __init__(self, capacity):
