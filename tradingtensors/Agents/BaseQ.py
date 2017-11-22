@@ -2,10 +2,21 @@ import tensorflow as tf
 from tensorflow.contrib import layers
 import numpy as np
 
+# Huber損失
+# 統計学において、ロバスト回帰で使われる損失関数の一つ
+#https://en.wikipedia.org/wiki/Huber_loss
+def huber_loss(error, delta=1.0):
+    return tf.where(
+        tf.abs(error) < delta,
+        tf.square(error) * 0.5,
+        delta * (tf.abs(error) - 0.5 * delta)
+    )
+
+
 class DQN(object):
-    def __init__(self, env, hiddens, scope):
+    def __init__(self, env, hiddens, scope_name):
         self.num_actions = env.action_space
-        with tf.variable_scope(scope):
+        with tf.variable_scope(scope_name):
             self.features = tf.placeholder(tf.float32, [None, env.observation_space])
             self.dropout = tf.placeholder(tf.float32)
 
@@ -21,7 +32,7 @@ class DQN(object):
             self.current_Q = tf.reduce_sum(self.Q_t * action_one_hot, reduction_indices=1)
 
             #Difference between target_network and online network estimation
-            error = self._huber_loss(self.target_q_t - self.current_Q)
+            error = huber_loss(self.target_q_t - self.current_Q)
 
             self.loss = tf.reduce_mean(error)
 
@@ -31,24 +42,18 @@ class DQN(object):
             self.trainer = tf.train.AdamOptimizer(learning_rate=learning_rate)
             self.optimize = self.trainer.minimize(self.loss, global_step=global_step)
             # create_optimizer end
-            self.variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope)
-    def _huber_loss(error, delta=1.0):
-        return tf.where(
-            tf.abs(error) < delta,
-            tf.square(error) * 0.5,
-            delta * (tf.abs(error) - 0.5 * delta)
-        )
+            self.variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope_name)
     def build_q_network(self, hiddens):
-        inputs = self.features
+        features = self.features
 
         for hidden in hiddens:
-            inputs = layers.fully_connected(
-                inputs=inputs,
+            features = layers.fully_connected(
+                inputs=features,
                 num_outputs= hidden,
                 activation_fn=tf.tanh,
                 weights_regularizer=layers.l2_regularizer(scale=0.1))
-            inputs = tf.nn.dropout(inputs, self.dropout)
-        self.Q_t = layers.fully_connected(inputs, self.num_actions, activation_fn=None)
+            features = tf.nn.dropout(features, self.dropout)
+        self.Q_t = layers.fully_connected(features, self.num_actions, activation_fn=None)
         self.Q_action = tf.argmax(self.Q_t, axis=1)
 
 class ReplayBuffer(object):
