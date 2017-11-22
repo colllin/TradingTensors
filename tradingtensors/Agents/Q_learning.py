@@ -179,11 +179,10 @@ class DQNAgent():
                         '''End of Episode routines'''
 
                         #Close the Last Trade in portfolio if any
-                        if self.env.portfolio.isHoldingTrade():
+                        if self.env.portfolio._isHoldingTrade:
                             lastTime = self.env.simulator.data.index[self.env.simulator.curr_idx].to_pydatetime()
                             lastOpen = self.env.simulator.data['Open'].iloc[self.env.simulator.curr_idx]
                             self.env.portfolio.closeTrade(TIME=lastTime, OPEN=lastOpen)
-
 
                         #Update Bookkeeping Tools
                         average_pips_per_trade = self.env.portfolio.total_reward / self.env.portfolio.total_trades
@@ -210,16 +209,11 @@ class DQNAgent():
                         else:
                             score = np.abs(average_pips_per_trade) * self.reward_record[-1]
 
-
                         #Is this score greater than any current top 10s?
-
                         TERMINAL_PATH = self.model_directory % episode
-
 
                         #Condition: Only start recording this score if agent is no longer exploring
                         if episode > EPISODES_TO_EXPLORE:
-
-
                             if len(top_10s) < 10:
                                 # Just append if there are not enough on the list
                                 top_10s.append((episode, score))
@@ -311,8 +305,6 @@ class DQNAgent():
         #print candle_stick
         ohlcPlot(self.journal_record[index], self.env.simulator.data, self.equity_curve_record[index])
 
-
-
     def test(self, episode):
         '''
         episode: int, episode to be selected
@@ -346,64 +338,3 @@ class DQNAgent():
             self.reward_record.append(self.env.portfolio.total_reward)
             self.equity_curve_record.append(self.env.portfolio.equity_curve)
             self.episodeReview(0)
-
-    def liveTrading(self, episode, HISTORY=20, tradeFirst=False):
-        '''
-        Threaded implementation of listener and handler events
-        episode: int, MODEL to be chosen
-        '''
-        #Set Environment and its portfolio to Live Mode
-        self.env.setLive()
-
-        #Clear up the portfolio
-        self.env.portfolio.reset()
-
-        #Initialize the time of the current incomplete candle
-        #Set True if start trading on current candle, (Not Recommended during Market Close)
-        if tradeFirst:
-            self.env.lastRecordedTime = None
-        else:
-            self.env.lastRecordedTime = self.env.api_Handle.getLatestTime(self.env.SYMBOL)
-
-        model_file = self.model_directory % episode
-
-        #Tensorflow session with Chosen Model
-        session = tf.Session()
-        saver = tf.train.Saver()
-        saver.restore(session, model_file)
-
-        #Initiate an event stack
-        events_q = LifoQueue(maxsize=1)
-
-        listenerThread = Thread(target=self.env.candleListener, args=(events_q,))
-        handlerThread = Thread(target=self.newCandleHandler, args=(events_q, session))
-
-        #Start threads
-        listenerThread.start()
-        handlerThread.start()
-
-    def newCandleHandler(self, queue, session, HISTORY=20):
-        '''
-        Receives a new Candle event and perform action
-        '''
-        while True:
-            if queue.empty():
-                continue
-            event = queue.get()
-
-            if event != 'New Candle':
-                continue
-
-            print ("Processing New Candle")
-            data, states = self.env.simulator.build_data_and_states(HISTORY)
-
-            action = self.choose_action(
-                observation=states[-1], #Latest state
-                epsilon=0, #Greedy selection
-                session=session,
-                dropout=1.0)
-
-            #Initiate position with Portfolio object
-            self.env.portfolio.newCandleHandler(action)
-
-            queue.task_done()
