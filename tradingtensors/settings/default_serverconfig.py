@@ -40,6 +40,3 @@ TF_IN_SECONDS = {
     'M':    2592000	#Assuming 30 days
 }
 
-GRANULARITIES = TF_IN_SECONDS.keys()
-
-

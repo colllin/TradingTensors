@@ -3,7 +3,7 @@ import time
 import numpy as np
 import pandas as pd
 
-from ..settings.serverconfig import GRANULARITIES, TF_IN_SECONDS, SYMBOL_HISTORY, TRAIN_SPLIT
+from ..settings.serverconfig import TF_IN_SECONDS, SYMBOL_HISTORY, TRAIN_SPLIT
 from ..functions.planetry_functions import get_planet_coordinates
 from ..functions.utils import OandaHandler
 
@@ -14,13 +14,13 @@ class OandaEnv():
                  granularity,
                  train=True,
                  mode='practice',
-                 additional_pairs=[],
+                 other_pairs=[],
                  trade_duration=1,
                  lookback_period=0,
                  planet_data={},
                  PLANET_FORWARD_PERIOD=0):
 
-        assert granularity in GRANULARITIES, "Please use this timeframe format {}".format(GRANULARITIES)
+        assert granularity in TF_IN_SECONDS.keys(), "Please use this timeframe format {}".format(TF_IN_SECONDS.keys())
         assert '_' in instrument, "Please define currency pair in this format XXX_XXX"
 
         self.api_Handle = OandaHandler(granularity, mode)
@@ -29,9 +29,8 @@ class OandaEnv():
         self.simulator = OandaSimulator(
             handle=self.api_Handle,
             instrument=instrument,
-            other_pairs=additional_pairs,
+            other_pairs=other_pairs,
             lookback=lookback_period,
-            train_split=TRAIN_SPLIT,
             isTraining=train,
             PRECISION=PRECISION,
             # Planet Data for Mr Peter's version
@@ -82,7 +81,6 @@ class OandaSimulator():
 
         # Attributes for training model
         # Percentage of data to be used for training, to be used in
-        self.TRAIN_SPLIT = kwargs['train_split']
         self.isTraining = kwargs['isTraining']  # Controlled by Environment
 
         #For Normalization
@@ -108,7 +106,7 @@ class OandaSimulator():
         data_count = self.states.shape[0]
         '''Define boundary index for training and testing'''
         self.train_start_idx = 0
-        self.train_end_idx = int(self.TRAIN_SPLIT*data_count)
+        self.train_end_idx = int(TRAIN_SPLIT*data_count)
         self.test_start_idx = self.train_end_idx +1
         self.test_end_idx = data_count - 1
 
