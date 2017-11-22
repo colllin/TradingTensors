@@ -11,7 +11,36 @@ import tensorflow as tf
 from ..settings.DQNsettings import (FINAL_P, GAMMA, INITIAL_P, UPDATE_FREQUENCY, DROPOUT)
 from .BaseQ import (DDQN, ReplayBuffer)
 from .visual_utils import ohlcPlot, rewardPlot
+class BestModels():
+    def __init__(self):
+        self.records = []
+    def check(self,episode, score):
+        #Is this score greater than any current top 10s?
+        #Condition: Only start recording this score if agent is no longer exploring
+        if len(self.records) < 10:
+            # Just append if there are not enough on the list
+            self.records.append((episode, score))
 
+            #Sort the list
+            self.records = sorted(self.records, key=lambda x: x[1], reverse=True)
+            return True
+
+        replace = False
+        insertion_idx = None
+        for i, _tuple in enumerate(self.records):
+            _epi, _score = _tuple[0], _tuple[1]
+
+            if score > _score:
+                insertion_idx = i
+                replace = True
+                break
+
+        #Remove from the last index, insert this
+        if replace:
+            self.records.pop()
+            self.records.insert(insertion_idx, (episode, score))
+            return True
+        return False
 class DQNAgent():
 
     def __init__(self, env, directory):
@@ -21,7 +50,7 @@ class DQNAgent():
         self.directory = directory
 
         self.ddqn = DDQN(env.observation_space, self.env.action_space)
-        self.best_models = []
+        self.best_model = BestModels()
     def train(
         self,
         policy_measure='optimal',
@@ -53,9 +82,6 @@ class DQNAgent():
             intra_op_parallelism_threads=8
             )
 
-        #Keep track of top 10 models
-        top_10s = []
-
         session = tf.Session(config=config_proto)
 
         #Initialize all weights and biases in NNs
@@ -72,8 +98,6 @@ class DQNAgent():
         self.avg_reward_record = []
         self.equity_curve_record = []
         t = 0
-        max_score = 0
-
 
         for episode in range(1, train_episodes+1):
 
@@ -152,64 +176,29 @@ class DQNAgent():
                         score = self.reward_record[-1]
                     else:
                         score = np.abs(average_pips_per_trade) * self.reward_record[-1]
-
                     #Is this score greater than any current top 10s?
-                    TERMINAL_PATH = self.model_directory % episode
-
                     #Condition: Only start recording this score if agent is no longer exploring
                     if episode > EPISODES_TO_EXPLORE:
-                        if len(top_10s) < 10:
-                            # Just append if there are not enough on the list
-                            top_10s.append((episode, score))
-
-                            #Sort the list
-                            top_10s = sorted(top_10s, key=lambda x: x[1], reverse=True)
-
-                            #Save the maximum score
-                            max_score = top_10s[0][1]
-
-                            saver.save(session, TERMINAL_PATH)
-                        else:
-                            replace = False
-                            insertion_idx = None
-                            for i, _tuple in enumerate(top_10s):
-                                _epi, _score = _tuple[0], _tuple[1]
-
-                                if score > _score:
-                                    max_score = score
-                                    insertion_idx = i
-                                    replace = True
-                                    break
-
-                            #Remove from the last index, insert this
-                            if replace:
-                                top_10s.pop()
-                                top_10s.insert(insertion_idx, (episode, score))
-                                saver.save(session, TERMINAL_PATH)
-
-                    if exploration == FINAL_P and len(top_10s) == 10:
-
+                        need_save = self.best_model.check(episode, score)
+                        if need_save:
+                            saver.save(session, self.model_directory % episode)
+                    if exploration == FINAL_P and len(self.best_model.records) == 10:
                         if np.mean(self.reward_record[-16:-1]) > CONVERGENCE_THRESHOLD:
                             solved = True
-
                     break
 
             if solved:
                 print ("CONVERGED!")
                 break
-
-        self.best_models = top_10s
-
-
     def trainSummary(self, TOP_N=3):
 
         #Plot Total Reward
-        rewardPlot(self.reward_record, self.best_models, 'Total', TOP_N)
+        rewardPlot(self.reward_record, self.best_model.records, 'Total', TOP_N)
 
         #Plot Average Reward
-        rewardPlot(self.avg_reward_record, self.best_models, "Average", TOP_N)
+        rewardPlot(self.avg_reward_record, self.best_model.records, "Average", TOP_N)
 
-        for i,m in enumerate(self.best_models):
+        for i,m in enumerate(self.best_model.records):
             episode = m[0]
             print ("########   RANK {}   ###########".format(i+1))
             print ("Episode          | {}".format(episode))
@@ -257,28 +246,27 @@ class DQNAgent():
 
         model_file = self.model_directory % episode
 
-        with tf.Session() as session:
-            #Create restoration path
-            saver = tf.train.Saver()
-            saver.restore(session, model_file)
+        session = tf.Session()
+        saver = tf.train.Saver()
+        saver.restore(session, model_file)
 
-            observation = self.env.reset(train=False)
-            done = False
+        observation = self.env.reset(train=False)
+        done = False
 
-            while not done:
-                #Select Action
-                action = self.ddqn.choose_action(
-                        observation=observation,
-                        epsilon=0, #Greedy selection
-                        session=session,
-                        dropout=1.0)
+        while not done:
+            #Select Action
+            action = self.ddqn.choose_action(
+                    observation=observation,
+                    epsilon=0, #Greedy selection
+                    session=session,
+                    dropout=1.0)
 
-                #Transit to next state given action
-                observation, _, _, done = self.env.step(action)
+            #Transit to next state given action
+            observation, _, _, done = self.env.step(action)
 
-            average_pips_per_trade = self.env.portfolio.total_reward / self.env.portfolio.total_trades
-            self.journal_record.append(self.env.portfolio.journal)
-            self.avg_reward_record.append(average_pips_per_trade)
-            self.reward_record.append(self.env.portfolio.total_reward)
-            self.equity_curve_record.append(self.env.portfolio.equity_curve)
-            self.episodeReview(0)
+        average_pips_per_trade = self.env.portfolio.total_reward / self.env.portfolio.total_trades
+        self.journal_record.append(self.env.portfolio.journal)
+        self.avg_reward_record.append(average_pips_per_trade)
+        self.reward_record.append(self.env.portfolio.total_reward)
+        self.equity_curve_record.append(self.env.portfolio.equity_curve)
+        self.episodeReview(0)

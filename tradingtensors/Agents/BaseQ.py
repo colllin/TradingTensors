@@ -62,25 +62,25 @@ class DDQN(object):
         #Copy variables of online network to target network
         for on_, tar_ in zip(self.online.variables, self.target.variables):
             session.run(tf.assign(tar_,on_))
-    def mini_batch_training(self, session, replaybuff, batch_size=32, discount=0.99):
+    def mini_batch_training(self, session, replaybuffer, batch_size=32, discount=0.99):
         '''
         Sample Batch from memory and optimize online network
         '''
-        obses_t, actions, rewards, obses_tp1, terminal = replaybuff.sample(batch_size)
+        observation, actions, rewards, next_observation, terminal = replaybuffer.sample(batch_size)
 
         #Double Q learning implementation
         state_shape = [batch_size, self.observations]
 
         #Use online network to generate next actions
         next_action = session.run(self.online.Q_action, feed_dict ={
-            self.online.features: np.reshape(obses_tp1, state_shape),
+            self.online.features: np.reshape(next_observation, state_shape),
             self.online.dropout: DROPOUT
         })
         #Use target network to predict next Q_value
         next_Q = session.run(
             self.target.Q_t,
              feed_dict ={
-                self.target.features: np.reshape(obses_tp1, state_shape),
+                self.target.features: np.reshape(next_observation, state_shape),
                 self.target.dropout: DROPOUT
             })
 
@@ -96,7 +96,7 @@ class DDQN(object):
              feed_dict={
                 self.online.target_q_t: target_q_t,
                 self.online.action: actions,
-                self.online.features: np.reshape(obses_t, state_shape),
+                self.online.features: np.reshape(observation, state_shape),
                 self.online.dropout: DROPOUT
             })
     def choose_action(self, observation, epsilon, session, dropout):
@@ -112,6 +112,7 @@ class DDQN(object):
                 self.online.dropout: dropout
                 }
             )[0]
+
 class ReplayBuffer(object):
     def __init__(self, capacity):
         self.capacity = capacity
