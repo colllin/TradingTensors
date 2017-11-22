@@ -13,20 +13,20 @@ def huber_loss(error, delta=1.0):
     )
 
 class DQN(object):
-    def __init__(self, env, hiddens, scope_name):
+    def __init__(self, observations, actions , scope_name):
         with tf.variable_scope(scope_name):
-            self.features = tf.placeholder(tf.float32, [None, env.observation_space])
+            self.features = tf.placeholder(tf.float32, [None, observations])
             self.dropout = tf.placeholder(tf.float32)
 
             inputs = self.features
-            for hidden in hiddens:
+            for hidden in [128, 64, 32]:
                 inputs = layers.fully_connected(
                     inputs=inputs,
                     num_outputs= hidden,
                     activation_fn = tf.tanh,
                     weights_regularizer = layers.l2_regularizer(scale=0.1))
                 inputs = tf.nn.dropout(inputs, self.dropout)
-            self.Q_t = layers.fully_connected(inputs, env.action_space, activation_fn=None)
+            self.Q_t = layers.fully_connected(inputs, actions, activation_fn=None)
             self.Q_action = tf.argmax(self.Q_t, axis=1)
 
             # create_optimizer
@@ -35,7 +35,7 @@ class DQN(object):
 
             #Compute current_Q estimation using online network, states and action are drawn from training batch
             self.action = tf.placeholder(tf.int64, [None])
-            action_one_hot = tf.one_hot(self.action, env.action_space, 1.0, 0.0)
+            action_one_hot = tf.one_hot(self.action, actions, 1.0, 0.0)
             current_Q = tf.reduce_sum(self.Q_t * action_one_hot, reduction_indices=1)
 
             #Difference between target_network and online network estimation
@@ -50,7 +50,11 @@ class DQN(object):
             self.optimize = self.trainer.minimize(self.loss, global_step=global_step)
             # create_optimizer end
             self.variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope_name)
-
+class DDQN(object):
+    def __init__(self, observations, actions):
+        for name in ['online','target']:
+            dqn = DQN(observations, actions, name)
+            setattr(self, name, dqn)
 class ReplayBuffer(object):
     def __init__(self, capacity):
         self.capacity = capacity

@@ -3,7 +3,7 @@ import time
 import numpy as np
 import pandas as pd
 
-from ..settings.serverconfig import TF_IN_SECONDS, SYMBOL_HISTORY, TRAIN_SPLIT
+from ..settings.serverconfig import TF_IN_SECONDS, HISTORICAL_DATA_LENGTH, TRAIN_SPLIT
 from ..functions.planetry_functions import get_planet_coordinates
 from ..functions.utils import OandaHandler
 
@@ -13,7 +13,6 @@ class OandaEnv():
                  instrument,
                  granularity,
                  train=True,
-                 mode='practice',
                  other_pairs=[],
                  trade_duration=1,
                  lookback_period=0,
@@ -23,7 +22,7 @@ class OandaEnv():
         assert granularity in TF_IN_SECONDS.keys(), "Please use this timeframe format {}".format(TF_IN_SECONDS.keys())
         assert '_' in instrument, "Please define currency pair in this format XXX_XXX"
 
-        self.api_Handle = OandaHandler(granularity, mode)
+        self.api_Handle = OandaHandler(granularity)
         precision = self.api_Handle.get_instrument_precision(instrument)
 
         self.simulator = OandaSimulator(
@@ -49,14 +48,13 @@ class OandaEnv():
         self.action_space = 3
         self.observation_space = self.simulator.states_dim
 
-
     def step(self, action):
         new_obs, portfolio_feed, done = self.simulator.step()
-        ACTION, reward = self.portfolio.newCandleHandler(
-            ACTION=action, TIME=portfolio_feed[0],
+        action, reward = self.portfolio.newCandleHandler(
+            action=action, TIME=portfolio_feed[0],
             OPEN=portfolio_feed[1], REWARD=portfolio_feed[2])
 
-        return new_obs, ACTION, reward, done
+        return new_obs, action, reward, done
 
     def reset(self, train):
         self.isTraining = train
@@ -86,7 +84,7 @@ class OandaSimulator():
         self.train_mean = None
         self.train_std = None
 
-        self.data, self.states = self.build_data_and_states(SYMBOL_HISTORY)
+        self.data, self.states = self.build_data_and_states()
         self.states_dim = self.states.shape[1]
 
         #To be used in every step of Simulator
@@ -130,9 +128,9 @@ class OandaSimulator():
 
         #Return the first instance of the state space
         return self.states[self.curr_idx]
-    def build_data_and_states(self, HISTORY):
+    def build_data_and_states(self):
         # Pull primary symbol from Oanda API
-        primary_data = self.api_Handle.get_history(self.instrument, HISTORY)
+        primary_data = self.api_Handle.get_history(self.instrument)
         assert primary_data is not None, "primary_data is not DataFrame"
 
         states_df = pd.DataFrame(index=primary_data.index)
@@ -143,7 +141,7 @@ class OandaSimulator():
         if len(self.other_pairs) > 0:
 
             for pair_name in self.other_pairs:
-                _symbol_data = self.api_Handle.get_history(pair_name, HISTORY)
+                _symbol_data = self.api_Handle.get_history(pair_name)
                 assert _symbol_data is not None, "{} _symbol_data is not DataFrame".format(pair_name)
                 #Attach to primary data
                 states_df.loc[:, "%s_Returns"%pair_name] = _symbol_data['Open'].pct_change()
@@ -182,7 +180,7 @@ class OandaSimulator():
 
     def step(self):
 
-        rew = self.reward_pips[self.curr_idx] #Current Reward: Current Close - Close Open
+        reward = self.reward_pips[self.curr_idx] #Current Reward: Current Close - Close Open
         THIS_OPEN = self.Open[self.curr_idx] #Current Open
         THIS_TIME = self.Dates[self.curr_idx]
 
@@ -190,7 +188,7 @@ class OandaSimulator():
         done = self.curr_idx >= self.end_idx
         new_obs = self.states[self.curr_idx] #Next State
 
-        return new_obs, (THIS_TIME, THIS_OPEN, rew), done
+        return new_obs, (THIS_TIME, THIS_OPEN, reward), done
 
 
 
@@ -205,7 +203,7 @@ class Portfolio():
         self.api_Handle = kwargs['handle']
         self.instrument = kwargs['instrument']
         self.reset()
-    def newCandleHandler(self, ACTION, **kwargs):
+    def newCandleHandler(self, action, **kwargs):
         '''
         IN Training/Testing mode, step returns action and reward
         TRAIN/TEST MODE:
@@ -226,21 +224,19 @@ class Portfolio():
             if reached:
                 #Close Trade
                 self.closeTrade(**kwargs)
-
             else:
                 #Continue Holding
-
                 return self.continueHolding(**kwargs)
 
-        if ACTION == 2:
+        if action == 2:
             # Do Nothing
             self.equity_curve.append(self.total_reward)
             REWARD = 0
-            return ACTION, REWARD
+            return action, REWARD
 
         else:
             #TAKE A TRADE
-            return self.openTrade(action=ACTION, **kwargs)
+            return self.openTrade(action=action, **kwargs)
 
 
     def openTrade(self, action, **kwargs):
@@ -256,9 +252,9 @@ class Portfolio():
         self.curr_trade['Entry Price'] = kwargs['OPEN']
 
         #Manipulate reward
-        rew = kwargs['REWARD']
+        reward = kwargs['REWARD']
         multiplier = 1.0 if self.curr_trade['Type'] == 'BUY' else -1.0
-        REWARD = rew * multiplier
+        REWARD = reward * multiplier
 
 
         #Accumulate reward
@@ -319,12 +315,12 @@ class Portfolio():
 
     def continueHolding(self, **kwargs):
         #Reset the action
-        ACTION = 2
+        action = 2
 
         #Manipulate reward
-        rew = kwargs['REWARD']
+        reward = kwargs['REWARD']
         multiplier = 1.0 if self.curr_trade['Type'] == 'BUY' else -1.0
-        REWARD = rew * multiplier
+        REWARD = reward * multiplier
 
         #Accumulate reward
         self.total_reward += REWARD
@@ -335,4 +331,4 @@ class Portfolio():
         self.equity_curve.append(self.total_reward)
 
 
-        return ACTION, REWARD
+        return action, REWARD

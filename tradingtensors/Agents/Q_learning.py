@@ -9,7 +9,7 @@ import pandas as pd
 import tensorflow as tf
 
 from ..settings.DQNsettings import (FINAL_P, GAMMA, INITIAL_P, UPDATE_FREQUENCY, DROPOUT)
-from .BaseQ import (DQN, ReplayBuffer)
+from .BaseQ import (DDQN, ReplayBuffer)
 from .visual_utils import ohlcPlot, rewardPlot
 
 class DQNAgent():
@@ -20,14 +20,12 @@ class DQNAgent():
         self.model_directory =None
         self.directory = directory
 
-        self.neurons = [128, 64, 32]
-        self.online_dqn = DQN(env, self.neurons, 'online')
-        self.target_dqn = DQN(env, self.neurons, 'target')
+        self.ddqn = DDQN(env.observation_space, self.env.action_space)
 
         self.best_models = []
-    def update(self,session):
+    def _update(self,session):
         #Copy variables of online network to target network
-        for on_, tar_ in zip(self.online_dqn.variables, self.target_dqn.variables):
+        for on_, tar_ in zip(self.ddqn.online.variables, self.ddqn.target.variables):
             session.run(tf.assign(tar_,on_))
     def choose_action(self, observation, epsilon, session, dropout):
         #maintain dropout ratio if training, else keep all neurons
@@ -36,10 +34,10 @@ class DQNAgent():
             return np.random.choice(self.env.action_space)
         #Exploitation
         return session.run(
-            self.online_dqn.Q_action,
+            self.ddqn.online.Q_action,
             feed_dict={
-                self.online_dqn.features: observation[np.newaxis, :],
-                self.online_dqn.dropout: dropout
+                self.ddqn.online.features: observation[np.newaxis, :],
+                self.ddqn.online.dropout: dropout
                 }
             )[0]
     def mini_batch_training(self, session, replaybuff, batch_size=32, discount=0.99):
@@ -52,16 +50,16 @@ class DQNAgent():
         state_shape = [batch_size, self.env.observation_space]
 
         #Use online network to generate next actions
-        next_action = session.run(self.online_dqn.Q_action, feed_dict ={
-            self.online_dqn.features: np.reshape(obses_tp1, state_shape),
-            self.online_dqn.dropout: DROPOUT
+        next_action = session.run(self.ddqn.online.Q_action, feed_dict ={
+            self.ddqn.online.features: np.reshape(obses_tp1, state_shape),
+            self.ddqn.online.dropout: DROPOUT
         })
         #Use target network to predict next Q_value
         next_Q = session.run(
-            self.target_dqn.Q_t,
+            self.ddqn.target.Q_t,
              feed_dict ={
-                self.target_dqn.features: np.reshape(obses_tp1, state_shape),
-                self.target_dqn.dropout: DROPOUT
+                self.ddqn.target.features: np.reshape(obses_tp1, state_shape),
+                self.ddqn.target.dropout: DROPOUT
             })
 
         #Select Q_values indexed by pred_actions
@@ -72,12 +70,12 @@ class DQNAgent():
         target_q_t = rewards + (1. - terminal) * discount * Q_prime
 
         session.run(
-            [self.online_dqn.optimize],
+            [self.ddqn.online.optimize],
              feed_dict={
-                self.online_dqn.target_q_t: target_q_t,
-                self.online_dqn.action: actions,
-                self.online_dqn.features: np.reshape(obses_t, state_shape),
-                self.online_dqn.dropout: DROPOUT
+                self.ddqn.online.target_q_t: target_q_t,
+                self.ddqn.online.action: actions,
+                self.ddqn.online.features: np.reshape(obses_t, state_shape),
+                self.ddqn.online.dropout: DROPOUT
             })
     def train(
         self,
@@ -87,9 +85,6 @@ class DQNAgent():
         EPISODES_TO_EXPLORE = 30,
         train_episodes = 200
         ):
-        '''
-        Run the full training cycle
-        '''
 
         assert policy_measure in ['average', 'highest', 'optimal'], \
         "policy measure can only be 'average', 'highest', or 'optimal'"
@@ -122,7 +117,7 @@ class DQNAgent():
             session.run(tf.global_variables_initializer())
 
             #Update Target Network to Online Network
-            self.update(session)
+            self._update(session)
 
             saver = tf.train.Saver(max_to_keep=None)
 
@@ -173,7 +168,7 @@ class DQNAgent():
 
                     if t % UPDATE_FREQUENCY == 0:
                         #Periodically copy online net to target net
-                        self.update(session)
+                        self._update(session)
 
                     if done:
                         '''End of Episode routines'''

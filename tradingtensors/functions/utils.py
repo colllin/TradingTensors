@@ -7,10 +7,7 @@ import requests
 from requests.exceptions import RequestException
 from talib import ATR, BBANDS
 
-from ..settings.serverconfig import ID, TOKEN
-
-'''to access OANDA API'''
-
+from ..settings.serverconfig import ID, TOKEN, HISTORICAL_DATA_LENGTH
 
 DEFAULT_URL ={
     'practice': 'https://api-fxpractice.oanda.com',
@@ -31,18 +28,12 @@ class OandaHandler(object):
         self.granularity = granularity
 
         self.DEFAULT_URL = DEFAULT_URL[mode]
-
-    def get_history(self, SYMBOL, HISTORY=5000):
-        '''
-        Retrieve history from Oanda
-        return dataframe if success
-        return None if failed
-        '''
-        QUERY_URL = self.DEFAULT_URL + '/v3/instruments/{}/candles'.format(SYMBOL)
+    def get_history(self, instrument):
+        url = self.DEFAULT_URL + '/v3/instruments/{}/candles'.format(instrument)
 
         #Parameters required to retrieve history
         params = {
-          "count": HISTORY,
+          "count": HISTORICAL_DATA_LENGTH,
           "granularity": self.granularity,
           "price": "M"
         }
@@ -52,7 +43,7 @@ class OandaHandler(object):
 
         #Make API call repeated
         try:
-            response = requests.get(QUERY_URL, headers=DEFAULT_HEADERS, params=params).json()
+            response = requests.get(url, headers=DEFAULT_HEADERS, params=params).json()
             received = response["candles"]
 
         except (RequestException, KeyError) as e:
@@ -90,14 +81,14 @@ class OandaHandler(object):
     '''
     def get_instrument_precision(self, instrument):
 
-        QUERY_URL = self.DEFAULT_URL + '/v3/accounts/{}/instruments'.format(ID)
+        url = self.DEFAULT_URL + '/v3/accounts/{}/instruments'.format(ID)
 
         params = {
             'instruments': instrument
         }
 
         try:
-            response = requests.get(QUERY_URL, headers=DEFAULT_HEADERS, params=params).json()
+            response = requests.get(url, headers=DEFAULT_HEADERS, params=params).json()
         except RequestException as e:
             print ("Error while retrieving instrument information: %s"%e)
             return None
