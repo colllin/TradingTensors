@@ -27,56 +27,6 @@ class DQNAgent():
         #Copy variables of online network to target network
         for on_, tar_ in zip(self.ddqn.online.variables, self.ddqn.target.variables):
             session.run(tf.assign(tar_,on_))
-    def choose_action(self, observation, epsilon, session, dropout):
-        #maintain dropout ratio if training, else keep all neurons
-        if np.random.random() < epsilon:
-            #Exploration
-            return np.random.choice(self.env.action_space)
-        #Exploitation
-        return session.run(
-            self.ddqn.online.Q_action,
-            feed_dict={
-                self.ddqn.online.features: observation[np.newaxis, :],
-                self.ddqn.online.dropout: dropout
-                }
-            )[0]
-    def mini_batch_training(self, session, replaybuff, batch_size=32, discount=0.99):
-        '''
-        Sample Batch from memory and optimize online network
-        '''
-        obses_t, actions, rewards, obses_tp1, terminal = replaybuff.sample(batch_size)
-
-        #Double Q learning implementation
-        state_shape = [batch_size, self.env.observation_space]
-
-        #Use online network to generate next actions
-        next_action = session.run(self.ddqn.online.Q_action, feed_dict ={
-            self.ddqn.online.features: np.reshape(obses_tp1, state_shape),
-            self.ddqn.online.dropout: DROPOUT
-        })
-        #Use target network to predict next Q_value
-        next_Q = session.run(
-            self.ddqn.target.Q_t,
-             feed_dict ={
-                self.ddqn.target.features: np.reshape(obses_tp1, state_shape),
-                self.ddqn.target.dropout: DROPOUT
-            })
-
-        #Select Q_values indexed by pred_actions
-        Q_prime = [next_Q[i][a] for i, a in enumerate(next_action)]
-
-
-        #Update Rule of the Bellman Equation
-        target_q_t = rewards + (1. - terminal) * discount * Q_prime
-
-        session.run(
-            [self.ddqn.online.optimize],
-             feed_dict={
-                self.ddqn.online.target_q_t: target_q_t,
-                self.ddqn.online.action: actions,
-                self.ddqn.online.features: np.reshape(obses_t, state_shape),
-                self.ddqn.online.dropout: DROPOUT
-            })
     def train(
         self,
         policy_measure='optimal',
@@ -134,7 +84,7 @@ class DQNAgent():
 
                 observation = self.env.reset(train=True)
 
-                done, SOLVED = False, False
+                done, solved = False, False
 
                 while not done:
 
@@ -151,7 +101,11 @@ class DQNAgent():
                     # linear decay end
 
                     #Pick an action using online network
-                    action = self.choose_action(observation=observation, epsilon=exploration, session=session, dropout=DROPOUT)
+                    action = self.ddqn.choose_action(
+                        observation=observation,
+                        epsilon=exploration,
+                        session=session,
+                        dropout=DROPOUT)
 
                     #Advance one step with the action in our environment
                     new_observation, _action, reward, done = self.env.step(action)
@@ -164,7 +118,7 @@ class DQNAgent():
 
                     if t > UPDATE_FREQUENCY:
                         #Optimize online network with SGD
-                        self.mini_batch_training(session, replaybuffer, batch_size, GAMMA)
+                        self.ddqn.mini_batch_training(session, replaybuffer, batch_size, GAMMA)
 
                     if t % UPDATE_FREQUENCY == 0:
                         #Periodically copy online net to target net
@@ -241,11 +195,11 @@ class DQNAgent():
                         if exploration == FINAL_P and len(top_10s) == 10:
 
                             if np.mean(self.reward_record[-16:-1]) > CONVERGENCE_THRESHOLD:
-                                SOLVED = True
+                                solved = True
 
                         break
 
-                if SOLVED:
+                if solved:
                     print ("CONVERGED!")
                     break
 
@@ -318,7 +272,7 @@ class DQNAgent():
 
             while not done:
                 #Select Action
-                action = self.choose_action(
+                action = self.ddqn.choose_action(
                         observation=observation,
                         epsilon=0, #Greedy selection
                         session=session,

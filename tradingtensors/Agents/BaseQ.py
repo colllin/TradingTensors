@@ -1,6 +1,7 @@
 import tensorflow as tf
 from tensorflow.contrib import layers
 import numpy as np
+from ..settings.DQNsettings import (DROPOUT)
 
 # Huber損失
 # 統計学において、ロバスト回帰で使われる損失関数の一つ
@@ -52,9 +53,61 @@ class DQN(object):
             self.variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope_name)
 class DDQN(object):
     def __init__(self, observations, actions):
+        self.observations = observations
+        self.actions = actions
         for name in ['online','target']:
             dqn = DQN(observations, actions, name)
             setattr(self, name, dqn)
+    def mini_batch_training(self, session, replaybuff, batch_size=32, discount=0.99):
+        '''
+        Sample Batch from memory and optimize online network
+        '''
+        obses_t, actions, rewards, obses_tp1, terminal = replaybuff.sample(batch_size)
+
+        #Double Q learning implementation
+        state_shape = [batch_size, self.observations]
+
+        #Use online network to generate next actions
+        next_action = session.run(self.online.Q_action, feed_dict ={
+            self.online.features: np.reshape(obses_tp1, state_shape),
+            self.online.dropout: DROPOUT
+        })
+        #Use target network to predict next Q_value
+        next_Q = session.run(
+            self.target.Q_t,
+             feed_dict ={
+                self.target.features: np.reshape(obses_tp1, state_shape),
+                self.target.dropout: DROPOUT
+            })
+
+        #Select Q_values indexed by pred_actions
+        Q_prime = [next_Q[i][a] for i, a in enumerate(next_action)]
+
+
+        #Update Rule of the Bellman Equation
+        target_q_t = rewards + (1. - terminal) * discount * Q_prime
+
+        session.run(
+            [self.online.optimize],
+             feed_dict={
+                self.online.target_q_t: target_q_t,
+                self.online.action: actions,
+                self.online.features: np.reshape(obses_t, state_shape),
+                self.online.dropout: DROPOUT
+            })
+    def choose_action(self, observation, epsilon, session, dropout):
+        #maintain dropout ratio if training, else keep all neurons
+        if np.random.random() < epsilon:
+            #Exploration
+            return np.random.choice(self.actions)
+        #Exploitation
+        return session.run(
+            self.online.Q_action,
+            feed_dict={
+                self.online.features: observation[np.newaxis, :],
+                self.online.dropout: dropout
+                }
+            )[0]
 class ReplayBuffer(object):
     def __init__(self, capacity):
         self.capacity = capacity
