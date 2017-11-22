@@ -58,6 +58,10 @@ class DDQN(object):
         for name in ['online','target']:
             dqn = DQN(observations, actions, name)
             setattr(self, name, dqn)
+    def update(self,session):
+        #Copy variables of online network to target network
+        for on_, tar_ in zip(self.online.variables, self.target.variables):
+            session.run(tf.assign(tar_,on_))
     def mini_batch_training(self, session, replaybuff, batch_size=32, discount=0.99):
         '''
         Sample Batch from memory and optimize online network

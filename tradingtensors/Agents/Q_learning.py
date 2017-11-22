@@ -21,12 +21,7 @@ class DQNAgent():
         self.directory = directory
 
         self.ddqn = DDQN(env.observation_space, self.env.action_space)
-
         self.best_models = []
-    def _update(self,session):
-        #Copy variables of online network to target network
-        for on_, tar_ in zip(self.ddqn.online.variables, self.ddqn.target.variables):
-            session.run(tf.assign(tar_,on_))
     def train(
         self,
         policy_measure='optimal',
@@ -61,147 +56,147 @@ class DQNAgent():
         #Keep track of top 10 models
         top_10s = []
 
-        with tf.Session(config=config_proto) as session:
+        session = tf.Session(config=config_proto)
 
-            #Initialize all weights and biases in NNs
-            session.run(tf.global_variables_initializer())
+        #Initialize all weights and biases in NNs
+        session.run(tf.global_variables_initializer())
 
-            #Update Target Network to Online Network
-            self._update(session)
+        #Update Target Network to Online Network
+        self.ddqn.update(session)
 
-            saver = tf.train.Saver(max_to_keep=None)
+        saver = tf.train.Saver(max_to_keep=None)
 
-            #Reseting all tools
-            self.journal_record = []
-            self.reward_record = []
-            self.avg_reward_record = []
-            self.equity_curve_record = []
-            t = 0
-            max_score = 0
-
-
-            for episode in range(1, train_episodes+1):
-
-                observation = self.env.reset(train=True)
-
-                done, solved = False, False
-
-                while not done:
-
-                    #Pick the decayed epsilon value
-                    # linear decay
-                    total_steps = EPISODES_TO_EXPLORE * steps_per_episode
-                    '''Linearly decay epsilon'''
-                    if t >= total_steps:
-                        exploration =  FINAL_P
-                    else :
-                        if total_steps > 0:
-                            difference = (FINAL_P - INITIAL_P) / total_steps
-                        exploration =  INITIAL_P + difference * t
-                    # linear decay end
-
-                    #Pick an action using online network
-                    action = self.ddqn.choose_action(
-                        observation=observation,
-                        epsilon=exploration,
-                        session=session,
-                        dropout=DROPOUT)
-
-                    #Advance one step with the action in our environment
-                    new_observation, _action, reward, done = self.env.step(action)
-
-                    #Add the Experience to the memory
-                    replaybuffer.add(observation, _action, reward, new_observation, float(done))
-
-                    observation = new_observation
-                    t += 1
-
-                    if t > UPDATE_FREQUENCY:
-                        #Optimize online network with SGD
-                        self.ddqn.mini_batch_training(session, replaybuffer, batch_size, GAMMA)
-
-                    if t % UPDATE_FREQUENCY == 0:
-                        #Periodically copy online net to target net
-                        self._update(session)
-
-                    if done:
-                        '''End of Episode routines'''
-
-                        #Close the Last Trade in portfolio if any
-                        if self.env.portfolio._isHoldingTrade:
-                            lastTime = self.env.simulator.data.index[self.env.simulator.curr_idx].to_pydatetime()
-                            lastOpen = self.env.simulator.data['Open'].iloc[self.env.simulator.curr_idx]
-                            self.env.portfolio.closeTrade(TIME=lastTime, OPEN=lastOpen)
-
-                        #Update Bookkeeping Tools
-                        average_pips_per_trade = self.env.portfolio.total_reward / self.env.portfolio.total_trades
-                        self.journal_record.append(self.env.portfolio.journal)
-                        self.avg_reward_record.append(average_pips_per_trade)
-                        self.reward_record.append(self.env.portfolio.total_reward)
-                        self.equity_curve_record.append(self.env.portfolio.equity_curve)
+        #Reseting all tools
+        self.journal_record = []
+        self.reward_record = []
+        self.avg_reward_record = []
+        self.equity_curve_record = []
+        t = 0
+        max_score = 0
 
 
-                        #Print statements at the end of every statements
-                        print("End of Episode %s, Total Reward is %s, Average Reward is %.3f"%(
-                            episode,
-                            self.env.portfolio.total_reward,
-                            average_pips_per_trade
-                            ))
-                        print("Percentage of time spent on exploring (Random Action): %s %%"%(
-                            int(100 * exploration)))
+        for episode in range(1, train_episodes+1):
 
-                        #Save this score
-                        if policy_measure == 'average':
-                            score = average_pips_per_trade
-                        elif policy_measure == 'highest':
-                            score = self.reward_record[-1]
+            observation = self.env.reset(train=True)
+
+            done, solved = False, False
+
+            while not done:
+
+                #Pick the decayed epsilon value
+                # linear decay
+                total_steps = EPISODES_TO_EXPLORE * steps_per_episode
+                '''Linearly decay epsilon'''
+                if t >= total_steps:
+                    exploration =  FINAL_P
+                else :
+                    if total_steps > 0:
+                        difference = (FINAL_P - INITIAL_P) / total_steps
+                    exploration =  INITIAL_P + difference * t
+                # linear decay end
+
+                #Pick an action using online network
+                action = self.ddqn.choose_action(
+                    observation=observation,
+                    epsilon=exploration,
+                    session=session,
+                    dropout=DROPOUT)
+
+                #Advance one step with the action in our environment
+                new_observation, _action, reward, done = self.env.step(action)
+
+                #Add the Experience to the memory
+                replaybuffer.add(observation, _action, reward, new_observation, float(done))
+
+                observation = new_observation
+                t += 1
+
+                if t > UPDATE_FREQUENCY:
+                    #Optimize online network with SGD
+                    self.ddqn.mini_batch_training(session, replaybuffer, batch_size, GAMMA)
+
+                if t % UPDATE_FREQUENCY == 0:
+                    #Periodically copy online net to target net
+                    self.ddqn.update(session)
+
+                if done:
+                    '''End of Episode routines'''
+
+                    #Close the Last Trade in portfolio if any
+                    if self.env.portfolio._isHoldingTrade:
+                        lastTime = self.env.simulator.data.index[self.env.simulator.curr_idx].to_pydatetime()
+                        lastOpen = self.env.simulator.data['Open'].iloc[self.env.simulator.curr_idx]
+                        self.env.portfolio.closeTrade(TIME=lastTime, OPEN=lastOpen)
+
+                    #Update Bookkeeping Tools
+                    average_pips_per_trade = self.env.portfolio.total_reward / self.env.portfolio.total_trades
+                    self.journal_record.append(self.env.portfolio.journal)
+                    self.avg_reward_record.append(average_pips_per_trade)
+                    self.reward_record.append(self.env.portfolio.total_reward)
+                    self.equity_curve_record.append(self.env.portfolio.equity_curve)
+
+
+                    #Print statements at the end of every statements
+                    print("End of Episode %s, Total Reward is %s, Average Reward is %.3f"%(
+                        episode,
+                        self.env.portfolio.total_reward,
+                        average_pips_per_trade
+                        ))
+                    print("Percentage of time spent on exploring (Random Action): %s %%"%(
+                        int(100 * exploration)))
+
+                    #Save this score
+                    if policy_measure == 'average':
+                        score = average_pips_per_trade
+                    elif policy_measure == 'highest':
+                        score = self.reward_record[-1]
+                    else:
+                        score = np.abs(average_pips_per_trade) * self.reward_record[-1]
+
+                    #Is this score greater than any current top 10s?
+                    TERMINAL_PATH = self.model_directory % episode
+
+                    #Condition: Only start recording this score if agent is no longer exploring
+                    if episode > EPISODES_TO_EXPLORE:
+                        if len(top_10s) < 10:
+                            # Just append if there are not enough on the list
+                            top_10s.append((episode, score))
+
+                            #Sort the list
+                            top_10s = sorted(top_10s, key=lambda x: x[1], reverse=True)
+
+                            #Save the maximum score
+                            max_score = top_10s[0][1]
+
+                            saver.save(session, TERMINAL_PATH)
                         else:
-                            score = np.abs(average_pips_per_trade) * self.reward_record[-1]
+                            replace = False
+                            insertion_idx = None
+                            for i, _tuple in enumerate(top_10s):
+                                _epi, _score = _tuple[0], _tuple[1]
 
-                        #Is this score greater than any current top 10s?
-                        TERMINAL_PATH = self.model_directory % episode
+                                if score > _score:
+                                    max_score = score
+                                    insertion_idx = i
+                                    replace = True
+                                    break
 
-                        #Condition: Only start recording this score if agent is no longer exploring
-                        if episode > EPISODES_TO_EXPLORE:
-                            if len(top_10s) < 10:
-                                # Just append if there are not enough on the list
-                                top_10s.append((episode, score))
-
-                                #Sort the list
-                                top_10s = sorted(top_10s, key=lambda x: x[1], reverse=True)
-
-                                #Save the maximum score
-                                max_score = top_10s[0][1]
-
+                            #Remove from the last index, insert this
+                            if replace:
+                                top_10s.pop()
+                                top_10s.insert(insertion_idx, (episode, score))
                                 saver.save(session, TERMINAL_PATH)
-                            else:
-                                replace = False
-                                insertion_idx = None
-                                for i, _tuple in enumerate(top_10s):
-                                    _epi, _score = _tuple[0], _tuple[1]
 
-                                    if score > _score:
-                                        max_score = score
-                                        insertion_idx = i
-                                        replace = True
-                                        break
+                    if exploration == FINAL_P and len(top_10s) == 10:
 
-                                #Remove from the last index, insert this
-                                if replace:
-                                    top_10s.pop()
-                                    top_10s.insert(insertion_idx, (episode, score))
-                                    saver.save(session, TERMINAL_PATH)
+                        if np.mean(self.reward_record[-16:-1]) > CONVERGENCE_THRESHOLD:
+                            solved = True
 
-                        if exploration == FINAL_P and len(top_10s) == 10:
-
-                            if np.mean(self.reward_record[-16:-1]) > CONVERGENCE_THRESHOLD:
-                                solved = True
-
-                        break
-
-                if solved:
-                    print ("CONVERGED!")
                     break
+
+            if solved:
+                print ("CONVERGED!")
+                break
 
         self.best_models = top_10s
 
