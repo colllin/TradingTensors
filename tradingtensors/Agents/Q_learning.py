@@ -94,6 +94,41 @@ class DQNAgent():
 
         # linear decay end
         return np.random.random_sample() < epsilon, epsilon
+    def _afterDone(self,session,EPISODES_TO_EXPLORE,episode,exploration):
+        #Close the Last Trade in portfolio if any
+        if self.env.portfolio._isHoldingTrade:
+            lastTime = self.env.simulator.data.index[self.env.simulator.curr_idx].to_pydatetime()
+            lastOpen = self.env.simulator.data['Open'].iloc[self.env.simulator.curr_idx]
+            self.env.portfolio.closeTrade(TIME=lastTime, OPEN=lastOpen)
+
+        #Update Bookkeeping Tools
+        average_pips_per_trade = self.env.portfolio.total_reward / self.env.portfolio.total_trades
+        self.journal_record.append(self.env.portfolio.journal)
+        self.avg_reward_record.append(average_pips_per_trade)
+        self.reward_record.append(self.env.portfolio.total_reward)
+        self.equity_curve_record.append(self.env.portfolio.equity_curve)
+
+
+        #Print statements at the end of every statements
+        print("End of Episode %s, Total Reward is %s, Average Reward is %.3f"%(
+            episode,
+            self.env.portfolio.total_reward,
+            average_pips_per_trade
+            ))
+        print("Percentage of time spent on exploring (Random Action): %s %%"%(
+            int(100 * exploration)))
+
+        #Is this score greater than any current top 10s?
+        #Condition: Only start recording this score if agent is no longer exploring
+        if episode > EPISODES_TO_EXPLORE and \
+            self.best_model.check(episode, average_pips_per_trade):
+            saver = tf.train.Saver(max_to_keep=None)
+            saver.save(session, self.model_directory % episode)
+        if exploration == FINAL_P and \
+            len(self.best_model.records) == 10 and \
+            np.mean(self.reward_record[-16:-1]) > CONVERGENCE_THRESHOLD:
+            return True
+        return False
     def train(
         self,
         batch_size = 32,
@@ -148,40 +183,8 @@ class DQNAgent():
                     replaybuffer)
                 if not done :
                     continue
+                solved = self._afterDone(session,EPISODES_TO_EXPLORE,episode,exploration)
 
-                #Close the Last Trade in portfolio if any
-                if self.env.portfolio._isHoldingTrade:
-                    lastTime = self.env.simulator.data.index[self.env.simulator.curr_idx].to_pydatetime()
-                    lastOpen = self.env.simulator.data['Open'].iloc[self.env.simulator.curr_idx]
-                    self.env.portfolio.closeTrade(TIME=lastTime, OPEN=lastOpen)
-
-                #Update Bookkeeping Tools
-                average_pips_per_trade = self.env.portfolio.total_reward / self.env.portfolio.total_trades
-                self.journal_record.append(self.env.portfolio.journal)
-                self.avg_reward_record.append(average_pips_per_trade)
-                self.reward_record.append(self.env.portfolio.total_reward)
-                self.equity_curve_record.append(self.env.portfolio.equity_curve)
-
-
-                #Print statements at the end of every statements
-                print("End of Episode %s, Total Reward is %s, Average Reward is %.3f"%(
-                    episode,
-                    self.env.portfolio.total_reward,
-                    average_pips_per_trade
-                    ))
-                print("Percentage of time spent on exploring (Random Action): %s %%"%(
-                    int(100 * exploration)))
-
-                #Is this score greater than any current top 10s?
-                #Condition: Only start recording this score if agent is no longer exploring
-                if episode > EPISODES_TO_EXPLORE and \
-                    self.best_model.check(episode, average_pips_per_trade):
-                    saver = tf.train.Saver(max_to_keep=None)
-                    saver.save(session, self.model_directory % episode)
-                if exploration == FINAL_P and \
-                    len(self.best_model.records) == 10 and \
-                    np.mean(self.reward_record[-16:-1]) > CONVERGENCE_THRESHOLD:
-                    solved = True
             if solved:
                 print ("CONVERGED!")
                 break
