@@ -49,34 +49,20 @@ class DQNAgent():
         self.best_model = BestModels()
     def _episodeLoop(self,
             session,
+            random_choice,
             episode,
             batch_size,
             observation,
             done,
-            solved,
             whole_steps,
-            EPISODES_TO_EXPLORE,
-            steps_per_episode,
-            replaybuffer,
-            CONVERGENCE_THRESHOLD):
-        #Pick the decayed epsilon value
-        # linear decay
-        total_steps = EPISODES_TO_EXPLORE * steps_per_episode
-        '''Linearly decay epsilon'''
-        if whole_steps >= total_steps:
-            exploration =  FINAL_P
+            replaybuffer):
+        if random_choice:
+            action = np.random.choice(self.ddqn.actions)
         else :
-            if total_steps > 0:
-                difference = (FINAL_P - INITIAL_P) / total_steps
-            exploration =  INITIAL_P + difference * whole_steps
-        # linear decay end
-
-        #Pick an action using online network
-        action = self.ddqn.choose_action(
-            observation=observation,
-            epsilon=exploration,
-            session=session,
-            dropout=DROPOUT)
+            #Pick an action using online network
+            action = self.ddqn.choose_action(
+                observation=observation,
+                session=session)
 
         #Advance one step with the action in our environment
         new_observation, _action, reward, done = self.env.step(action)
@@ -94,44 +80,20 @@ class DQNAgent():
         if whole_steps % UPDATE_FREQUENCY == 0:
             #Periodically copy online net to target net
             self.ddqn.update(session)
+        return done, whole_steps ,observation
+    def _useRondomChoice(self,whole_steps,total_steps):
+        #Pick the decayed epsilon value
+        # linear decay
+        '''Linearly decay epsilon'''
+        if whole_steps >= total_steps:
+            epsilon =  FINAL_P
+        else :
+            if total_steps > 0:
+                difference = (FINAL_P - INITIAL_P) / total_steps
+            epsilon =  INITIAL_P + difference * whole_steps
 
-        if done:
-            '''End of Episode routines'''
-
-            #Close the Last Trade in portfolio if any
-            if self.env.portfolio._isHoldingTrade:
-                lastTime = self.env.simulator.data.index[self.env.simulator.curr_idx].to_pydatetime()
-                lastOpen = self.env.simulator.data['Open'].iloc[self.env.simulator.curr_idx]
-                self.env.portfolio.closeTrade(TIME=lastTime, OPEN=lastOpen)
-
-            #Update Bookkeeping Tools
-            average_pips_per_trade = self.env.portfolio.total_reward / self.env.portfolio.total_trades
-            self.journal_record.append(self.env.portfolio.journal)
-            self.avg_reward_record.append(average_pips_per_trade)
-            self.reward_record.append(self.env.portfolio.total_reward)
-            self.equity_curve_record.append(self.env.portfolio.equity_curve)
-
-
-            #Print statements at the end of every statements
-            print("End of Episode %s, Total Reward is %s, Average Reward is %.3f"%(
-                episode,
-                self.env.portfolio.total_reward,
-                average_pips_per_trade
-                ))
-            print("Percentage of time spent on exploring (Random Action): %s %%"%(
-                int(100 * exploration)))
-
-            #Is this score greater than any current top 10s?
-            #Condition: Only start recording this score if agent is no longer exploring
-            if episode > EPISODES_TO_EXPLORE:
-                need_save = self.best_model.check(episode, average_pips_per_trade)
-                if need_save:
-                    saver = tf.train.Saver(max_to_keep=None)
-                    saver.save(session, self.model_directory % episode)
-            if exploration == FINAL_P and len(self.best_model.records) == 10:
-                if np.mean(self.reward_record[-16:-1]) > CONVERGENCE_THRESHOLD:
-                    solved = True
-        return done, solved, whole_steps
+        # linear decay end
+        return np.random.random_sample() < epsilon, epsilon
     def train(
         self,
         batch_size = 32,
@@ -145,7 +107,7 @@ class DQNAgent():
             os.remove(os.path.join(self.directory, file))
 
         steps_per_episode = self.env.simulator.train_end_idx - self.env.simulator.train_start_idx - 2
-
+        total_steps = EPISODES_TO_EXPLORE * steps_per_episode
         #Create a Transition memory storage
         replaybuffer = ReplayBuffer(steps_per_episode * train_episodes * 1.2)
 
@@ -174,18 +136,52 @@ class DQNAgent():
             observation = self.env.reset(train=True)
             done, solved = False, False
             while not done:
-                done, solved, whole_steps = self._episodeLoop(
+                random_choice, exploration = self._useRondomChoice(whole_steps,total_steps)
+                done, whole_steps, observation = self._episodeLoop(
                     session,
+                    random_choice,
                     episode,
                     batch_size,
                     observation,
                     done,
-                    solved,
                     whole_steps,
-                    EPISODES_TO_EXPLORE,
-                    steps_per_episode,
-                    replaybuffer,
-                    CONVERGENCE_THRESHOLD)
+                    replaybuffer)
+                if not done :
+                    continue
+
+                #Close the Last Trade in portfolio if any
+                if self.env.portfolio._isHoldingTrade:
+                    lastTime = self.env.simulator.data.index[self.env.simulator.curr_idx].to_pydatetime()
+                    lastOpen = self.env.simulator.data['Open'].iloc[self.env.simulator.curr_idx]
+                    self.env.portfolio.closeTrade(TIME=lastTime, OPEN=lastOpen)
+
+                #Update Bookkeeping Tools
+                average_pips_per_trade = self.env.portfolio.total_reward / self.env.portfolio.total_trades
+                self.journal_record.append(self.env.portfolio.journal)
+                self.avg_reward_record.append(average_pips_per_trade)
+                self.reward_record.append(self.env.portfolio.total_reward)
+                self.equity_curve_record.append(self.env.portfolio.equity_curve)
+
+
+                #Print statements at the end of every statements
+                print("End of Episode %s, Total Reward is %s, Average Reward is %.3f"%(
+                    episode,
+                    self.env.portfolio.total_reward,
+                    average_pips_per_trade
+                    ))
+                print("Percentage of time spent on exploring (Random Action): %s %%"%(
+                    int(100 * exploration)))
+
+                #Is this score greater than any current top 10s?
+                #Condition: Only start recording this score if agent is no longer exploring
+                if episode > EPISODES_TO_EXPLORE and \
+                    self.best_model.check(episode, average_pips_per_trade):
+                    saver = tf.train.Saver(max_to_keep=None)
+                    saver.save(session, self.model_directory % episode)
+                if exploration == FINAL_P and \
+                    len(self.best_model.records) == 10 and \
+                    np.mean(self.reward_record[-16:-1]) > CONVERGENCE_THRESHOLD:
+                    solved = True
             if solved:
                 print ("CONVERGED!")
                 break
@@ -252,9 +248,8 @@ class DQNAgent():
             #Select Action
             action = self.ddqn.choose_action(
                     observation=observation,
-                    epsilon=0, #Greedy selection
                     session=session,
-                    dropout=1.0)
+                    test=True)
 
             #Transit to next state given action
             observation, _, _, done = self.env.step(action)

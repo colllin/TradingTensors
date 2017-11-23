@@ -99,12 +99,8 @@ class DDQN(object):
                 self.online.features: np.reshape(observation, state_shape),
                 self.online.dropout: DROPOUT
             })
-    def choose_action(self, observation, epsilon, session, dropout):
-        #maintain dropout ratio if training, else keep all neurons
-        if np.random.random() < epsilon:
-            #Exploration
-            return np.random.choice(self.actions)
-        #Exploitation
+    def choose_action(self, observation, session, test=False):
+        dropout = 1 if test else DROPOUT
         return session.run(
             self.online.Q_action,
             feed_dict={
