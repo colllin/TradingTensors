@@ -1,7 +1,9 @@
 import tensorflow as tf
 from tensorflow.contrib import layers
 import numpy as np
-from ..settings.DQNsettings import (DROPOUT)
+
+#Regularization Params
+DROPOUT = 0.1 # Dropout: How much neurons to keep?
 
 # Huber損失
 # 統計学において、ロバスト回帰で使われる損失関数の一つ

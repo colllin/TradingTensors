@@ -8,9 +8,13 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 
-from ..settings.DQNsettings import (FINAL_P, GAMMA, INITIAL_P, UPDATE_FREQUENCY, DROPOUT)
 from .BaseQ import (DDQN, ReplayBuffer)
 from .visual_utils import ohlcPlot, rewardPlot
+
+UPDATE_FREQUENCY = 500
+#Epsilon-Greedy Algorithm
+FINAL_P = 0.02
+INITIAL_P = 1.0
 class BestModels():
     def __init__(self):
         self.records = []
@@ -53,8 +57,7 @@ class DQNAgent():
             episode,
             batch_size,
             observation,
-            done,
-            whole_steps,
+            learning_step,
             replaybuffer):
         if random_choice:
             action = np.random.choice(self.ddqn.actions)
@@ -71,30 +74,30 @@ class DQNAgent():
         replaybuffer.add(observation, _action, reward, new_observation, float(done))
 
         observation = new_observation
-        whole_steps += 1
+        learning_step += 1
 
-        if whole_steps > UPDATE_FREQUENCY:
+        if learning_step > UPDATE_FREQUENCY:
             #Optimize online network with SGD
-            self.ddqn.mini_batch_training(session, replaybuffer, batch_size, GAMMA)
+            self.ddqn.mini_batch_training(session, replaybuffer, batch_size)
 
-        if whole_steps % UPDATE_FREQUENCY == 0:
+        if learning_step % UPDATE_FREQUENCY == 0:
             #Periodically copy online net to target net
             self.ddqn.update(session)
-        return done, whole_steps ,observation
-    def _useRondomChoice(self,whole_steps,total_steps):
+        return done, learning_step ,observation
+    def _useRondomChoice(self,learning_step,total_steps):
         #Pick the decayed epsilon value
         # linear decay
         '''Linearly decay epsilon'''
-        if whole_steps >= total_steps:
+        if learning_step >= total_steps:
             epsilon =  FINAL_P
         else :
             if total_steps > 0:
                 difference = (FINAL_P - INITIAL_P) / total_steps
-            epsilon =  INITIAL_P + difference * whole_steps
+            epsilon =  INITIAL_P + difference * learning_step
 
         # linear decay end
         return np.random.random_sample() < epsilon, epsilon
-    def _afterDone(self,session,EPISODES_TO_EXPLORE,episode,exploration):
+    def _afterDone(self,session,record_episode_after,episode,exploration):
         #Close the Last Trade in portfolio if any
         if self.env.portfolio._isHoldingTrade:
             lastTime = self.env.simulator.data.index[self.env.simulator.curr_idx].to_pydatetime()
@@ -120,20 +123,15 @@ class DQNAgent():
 
         #Is this score greater than any current top 10s?
         #Condition: Only start recording this score if agent is no longer exploring
-        if episode > EPISODES_TO_EXPLORE and \
+        if episode > record_episode_after and \
             self.best_model.check(episode, average_pips_per_trade):
             saver = tf.train.Saver(max_to_keep=None)
             saver.save(session, self.model_directory % episode)
-        if exploration == FINAL_P and \
-            len(self.best_model.records) == 10 and \
-            np.mean(self.reward_record[-16:-1]) > CONVERGENCE_THRESHOLD:
-            return True
-        return False
     def train(
         self,
         batch_size = 32,
         CONVERGENCE_THRESHOLD = 2000,
-        EPISODES_TO_EXPLORE = 30,
+        record_episode_after = 30,
         train_episodes = 200
         ):
 
@@ -141,10 +139,10 @@ class DQNAgent():
         for file in os.listdir(self.directory):
             os.remove(os.path.join(self.directory, file))
 
-        steps_per_episode = self.env.simulator.train_end_idx - self.env.simulator.train_start_idx - 2
-        total_steps = EPISODES_TO_EXPLORE * steps_per_episode
+        step_per_episode = self.env.simulator.train_end_idx - self.env.simulator.train_start_idx - 2
+        total_steps = record_episode_after * step_per_episode
         #Create a Transition memory storage
-        replaybuffer = ReplayBuffer(steps_per_episode * train_episodes * 1.2)
+        replaybuffer = ReplayBuffer(step_per_episode * train_episodes * 1.2)
 
         #Use of parallelism
         config_proto=tf.ConfigProto(
@@ -165,27 +163,26 @@ class DQNAgent():
         self.reward_record = []
         self.avg_reward_record = []
         self.equity_curve_record = []
-        whole_steps = 0
+        learning_step = 0
 
         for episode in range(1, train_episodes+1):
             observation = self.env.reset(train=True)
-            done, solved = False, False
-            while not done:
-                random_choice, exploration = self._useRondomChoice(whole_steps,total_steps)
-                done, whole_steps, observation = self._episodeLoop(
+            while true:
+                random_choice, exploration = self._useRondomChoice(learning_step,total_steps)
+                done, learning_step, observation = self._episodeLoop(
                     session,
                     random_choice,
                     episode,
                     batch_size,
                     observation,
-                    done,
-                    whole_steps,
+                    learning_step,
                     replaybuffer)
-                if not done :
-                    continue
-                solved = self._afterDone(session,EPISODES_TO_EXPLORE,episode,exploration)
-
-            if solved:
+                if done :
+                    break
+            self._afterDone(session,record_episode_after,episode,exploration)
+            if exploration == FINAL_P and \
+                len(self.best_model.records) == 10 and \
+                np.mean(self.reward_record[-16:-1]) > CONVERGENCE_THRESHOLD:
                 print ("CONVERGED!")
                 break
     def trainSummary(self, TOP_N=3):
