@@ -2,7 +2,7 @@ from setuptools import setup
 
 
 setup(
-    name='tradingtensors',
+    name='tradingtensor',
     version='0.1',
     author='henryBee',
     install_requires=[

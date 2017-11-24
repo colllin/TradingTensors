@@ -167,7 +167,7 @@ class DQNAgent():
 
         for episode in range(1, train_episodes+1):
             observation = self.env.reset(train=True)
-            while true:
+            while True:
                 random_choice, exploration = self._useRondomChoice(learning_step,total_steps)
                 done, learning_step, observation = self._episodeLoop(
                     session,
