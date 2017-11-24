@@ -273,10 +273,10 @@ class Agent(object):
                 steps += 1
 
                 if done:
-                    if self.env.portfolio._isHoldingTrade:
+                    if self.env.portfolio.trade is not None:
                         lastTime = self.env.simulator.data.index[self.env.simulator.curr_idx].to_pydatetime()
                         lastOpen = self.env.simulator.data['Open'].iloc[self.env.simulator.curr_idx]
-                        self.env.portfolio.closeTrade(TIME=lastTime, OPEN=lastOpen)
+                        self.env.portfolio.closeTrade(time=lastTime, open=lastOpen)
 
                     #Use portfolio reward tracker for greater accuracy
                     eps_reward = self.env.portfolio.total_reward
@@ -379,52 +379,46 @@ class A3CAgent(object):
 
             obs = next_obs
 
-        if self.env.portfolio._isHoldingTrade:
+        if self.env.portfolio.trade is not None:
             lastTime = self.env.simulator.data.index[self.env.simulator.curr_idx].to_pydatetime()
             lastOpen = self.env.simulator.data['Open'].iloc[self.env.simulator.curr_idx]
-            self.env.portfolio.closeTrade(TIME=lastTime, OPEN=lastOpen)
+            self.env.portfolio.closeTrade(time=lastTime, open=lastOpen)
 
-
-        AVERAGE_PIPS_PER_TRADE = self.env.portfolio.total_reward / self.env.portfolio.total_trades
-        self.journal_record = self.env.portfolio.journal
-        self.avg_reward_record = AVERAGE_PIPS_PER_TRADE
-        self.reward_record =self.env.portfolio.total_reward
-        self.equity_curve_record = self.env.portfolio.equity_curve
+        self.trades = self.env.portfolio.trades
+        self.avg_rewards = self.env.portfolio.total_reward / self.env.portfolio.total_trades
+        self.rewards =self.env.portfolio.total_reward
+        self.equity_curves = self.env.portfolio.equity_curve
 
         self.summaryPlot()
 
     def summaryPlot(self):
-        '''
-        Review of the Agent's Performance
-        '''
+        trades = pd.DataFrame([vars(f) for f in self.trades])
 
-        journal = pd.DataFrame(self.journal_record)
-
-        buys = journal.loc[journal['Type']=='BUY', :]
-        sells = journal.loc[journal['Type']=='SELL', :]
+        buys = trades.loc[trades.type=='BUY', :]
+        sells = trades.loc[trades.type=='SELL', :]
 
         print ("Summary Statistics (Test)\n")
 
         print ("Total Trades            | {}        (Buy){}       (Sell){} "\
-            .format(journal.shape[0], buys.shape[0], sells.shape[0]))
+            .format(trades.shape[0], buys.shape[0], sells.shape[0]))
 
         #Calculate Profit breakdown
-        total_profit = journal.Profit.sum()
-        buy_profit = buys.Profit.sum()
-        sell_profit = sells.Profit.sum()
+        total_profit = trades.profit.sum()
+        buy_profit = buys.profit.sum()
+        sell_profit = sells.profit.sum()
 
         print ("Profit (in pips)        | %.2f   (Buy)%.2f   (Sell)%.2f"\
             %(total_profit, buy_profit, sell_profit))
 
         #Calculate Win Ratio
-        total_percent = (journal.loc[journal['Profit']>0,'Profit'].count()/ journal.shape[0]) * 100
-        buy_percent = (buys.loc[buys['Profit']>0, 'Profit'].count()/buys.shape[0]) * 100
-        sell_percent = (sells.loc[sells['Profit']>0, 'Profit'].count()/sells.shape[0]) * 100
+        total_percent = (trades.loc[trades.profit>0,'profit'].count()/ trades.shape[0]) * 100
+        buy_percent = (buys.loc[buys.profit>0, 'profit'].count()/buys.shape[0]) * 100
+        sell_percent = (sells.loc[sells.profit>0, 'profit'].count()/sells.shape[0]) * 100
         print ("Win Ratio               | %.2f%%    (Buy)%.2f%%   (Sell)%.2f %%"%(total_percent, buy_percent, sell_percent))
 
         #Duration
-        duration = journal['Trade Duration'].mean()
+        duration = trades.duration.mean()
         print ("Average Trade Duration  | %.2f"%(duration))
 
 
-        ohlcPlot(self.journal_record, self.env.simulator.data, self.equity_curve_record)
+        ohlcPlot(self.trades, self.env.simulator.data, self.equity_curves)

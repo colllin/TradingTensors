@@ -39,11 +39,11 @@ def rewardPlot(record, best_models, TYPE, top_n=3):
     plt.show()
 
 
-def ohlcPlot(journal, ohlc, equity_curve):
+def ohlcPlot(trades, ohlc, equity_curve):
 
     #Filter out buys and sells
-    buys = [x for x in journal if x['Type']=='BUY']
-    sells = [x for x in journal if x['Type']=='SELL']
+    buys = [trade for trade in trades if trade.type=='BUY']
+    sells = [trade for trade in trades if trade.type=='SELL']
 
     #make OHLC ohlc matplotlib friendly
     datetime_index = mdates.date2num(ohlc.index.to_pydatetime())
@@ -78,16 +78,16 @@ def ohlcPlot(journal, ohlc, equity_curve):
     #Buy indicator
 
     ax.plot(
-        mdates.date2num([buy['Entry Time'] for buy in buys]),
-        [buy['Entry Price']-0.001 for buy in buys],
+        mdates.date2num([buy.entry_time for buy in buys]),
+        [buy.entry_price-0.001 for buy in buys],
         'b^',
         alpha=1.0
     )
 
     #Sell indicator
     ax.plot(
-        mdates.date2num([sell['Entry Time'] for sell in sells]),
-        [sell['Entry Price']+0.001 for sell in sells],
+        mdates.date2num([sell.entry_time for sell in sells]),
+        [sell.entry_price+0.001 for sell in sells],
         'rv',
         alpha=1.0
     )

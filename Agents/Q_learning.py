@@ -99,17 +99,17 @@ class DQNAgent():
         return np.random.random_sample() < epsilon, epsilon
     def _afterDone(self,session,record_episode_after,episode,exploration):
         #Close the Last Trade in portfolio if any
-        if self.env.portfolio._isHoldingTrade:
+        if self.env.portfolio.trade is not None:
             lastTime = self.env.simulator.data.index[self.env.simulator.curr_idx].to_pydatetime()
             lastOpen = self.env.simulator.data['Open'].iloc[self.env.simulator.curr_idx]
-            self.env.portfolio.closeTrade(TIME=lastTime, OPEN=lastOpen)
+            self.env.portfolio.closeTrade(time=lastTime, open=lastOpen)
 
         #Update Bookkeeping Tools
         average_pips_per_trade = self.env.portfolio.total_reward / self.env.portfolio.total_trades
-        self.journal_record.append(self.env.portfolio.journal)
-        self.avg_reward_record.append(average_pips_per_trade)
-        self.reward_record.append(self.env.portfolio.total_reward)
-        self.equity_curve_record.append(self.env.portfolio.equity_curve)
+        self.trades.append(self.env.portfolio.trades)
+        self.avg_rewards.append(average_pips_per_trade)
+        self.rewards.append(self.env.portfolio.total_reward)
+        self.equity_curves.append(self.env.portfolio.equity_curve)
 
 
         #Print statements at the end of every statements
@@ -130,7 +130,7 @@ class DQNAgent():
     def train(
         self,
         batch_size = 32,
-        CONVERGENCE_THRESHOLD = 2000,
+        convergence_reward = 2000,
         record_episode_after = 30,
         train_episodes = 200
         ):
@@ -159,10 +159,10 @@ class DQNAgent():
         self.ddqn.update(session)
 
         #Reseting all tools
-        self.journal_record = []
-        self.reward_record = []
-        self.avg_reward_record = []
-        self.equity_curve_record = []
+        self.trades = []
+        self.rewards = []
+        self.avg_rewards = []
+        self.equity_curves = []
         learning_step = 0
 
         for episode in range(1, train_episodes+1):
@@ -182,56 +182,56 @@ class DQNAgent():
             self._afterDone(session,record_episode_after,episode,exploration)
             if exploration == FINAL_P and \
                 len(self.best_model.records) == 10 and \
-                np.mean(self.reward_record[-16:-1]) > CONVERGENCE_THRESHOLD:
+                np.mean(self.rewards[-16:-1]) > convergence_reward: # 最後の15個が予定のrewardを超えていたら
                 print ("CONVERGED!")
                 break
     def trainSummary(self, TOP_N=3):
 
         #Plot Total Reward
-        rewardPlot(self.reward_record, self.best_model.records, 'Total', TOP_N)
+        rewardPlot(self.rewards, self.best_model.records, 'Total', TOP_N)
 
         #Plot Average Reward
-        rewardPlot(self.avg_reward_record, self.best_model.records, "Average", TOP_N)
+        rewardPlot(self.avg_rewards, self.best_model.records, "Average", TOP_N)
 
         for i,m in enumerate(self.best_model.records):
             episode = m[0]
             print ("########   RANK {}   ###########".format(i+1))
             print ("Episode          | {}".format(episode))
-            print ("Total Reward     | {0:.2f}".format(self.reward_record[episode-1]))
-            print ("Average Reward   | {0:.2f}".format(self.avg_reward_record[episode-1]))
+            print ("Total Reward     | {0:.2f}".format(self.rewards[episode-1]))
+            print ("Average Reward   | {0:.2f}".format(self.avg_rewards[episode-1]))
 
     def episodeReview(self, episode):
 
         index = episode - 1
 
-        journal = pd.DataFrame(self.journal_record[index])
+        trades = pd.DataFrame([vars(f) for f in self.trades[index]])
 
-        buys = journal.loc[journal['Type']=='BUY', :]
-        sells = journal.loc[journal['Type']=='SELL', :]
+        buys = trades.loc[trades.type=='BUY', :]
+        sells = trades.loc[trades.type=='SELL', :]
 
         print ("Summary Statistics for Episode %s \n"%(episode))
         print ("Total Trades            | {}        (Buy){}       (Sell){} "\
-            .format(journal.shape[0], buys.shape[0], sells.shape[0]))
+            .format(trades.shape[0], buys.shape[0], sells.shape[0]))
 
         #Calculate Profit breakdown
-        total_profit = journal.Profit.sum()
-        buy_profit = buys.Profit.sum()
-        sell_profit = sells.Profit.sum()
+        total_profit = trades.profit.sum()
+        buy_profit = buys.profit.sum()
+        sell_profit = sells.profit.sum()
 
         print ("Profit (in pips)        | %.2f   (Buy)%.2f   (Sell)%.2f"\
             %(total_profit, buy_profit, sell_profit))
 
         #Calculate Win Ratio
-        total_percent = (journal.loc[journal['Profit']>0,'Profit'].count()/ journal.shape[0]) * 100
-        buy_percent = (buys.loc[buys['Profit']>0, 'Profit'].count()/buys.shape[0]) * 100
-        sell_percent = (sells.loc[sells['Profit']>0, 'Profit'].count()/sells.shape[0]) * 100
+        total_percent = (trades.loc[trades.profit>0,'profit'].count()/ trades.shape[0]) * 100
+        buy_percent = (buys.loc[buys.profit>0, 'profit'].count()/buys.shape[0]) * 100
+        sell_percent = (sells.loc[sells.profit>0, 'profit'].count()/sells.shape[0]) * 100
         print ("Win Ratio               | %.2f%%    (Buy)%.2f%%   (Sell)%.2f %%"%(total_percent, buy_percent, sell_percent))
 
-        duration = journal['Trade Duration'].mean()
+        duration = trades.duration.mean()
         print ("Average Trade Duration  | %.2f"%(duration))
 
         #print candle_stick
-        ohlcPlot(self.journal_record[index], self.env.simulator.data, self.equity_curve_record[index])
+        ohlcPlot(self.trades[index], self.env.simulator.data, self.equity_curves[index])
 
     def test(self, episode):
         '''
@@ -257,8 +257,8 @@ class DQNAgent():
                 break;
 
         average_pips_per_trade = self.env.portfolio.total_reward / self.env.portfolio.total_trades
-        self.journal_record.append(self.env.portfolio.journal)
-        self.avg_reward_record.append(average_pips_per_trade)
-        self.reward_record.append(self.env.portfolio.total_reward)
-        self.equity_curve_record.append(self.env.portfolio.equity_curve)
+        self.trades.append(self.env.portfolio.trades)
+        self.avg_rewards.append(average_pips_per_trade)
+        self.rewards.append(self.env.portfolio.total_reward)
+        self.equity_curves.append(self.env.portfolio.equity_curve)
         self.episodeReview(0)

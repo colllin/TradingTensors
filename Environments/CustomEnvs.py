@@ -1,5 +1,3 @@
-import time
-
 import numpy as np
 import pandas as pd
 
@@ -51,8 +49,8 @@ class OandaEnv():
     def step(self, action):
         new_obs, portfolio_feed, done = self.simulator.step()
         action, reward = self.portfolio.newCandleHandler(
-            action=action, TIME=portfolio_feed[0],
-            OPEN=portfolio_feed[1], REWARD=portfolio_feed[2])
+            action=action, time=portfolio_feed[0],
+            open=portfolio_feed[1], reward=portfolio_feed[2])
 
         return new_obs, action, reward, done
 
@@ -91,7 +89,7 @@ class OandaSimulator():
         self.Open = self.data.Open.values
         self.Dates = self.data.index.to_pydatetime().tolist()
 
-        #Reward: (CLOSE - OPEN) / (0.0001)
+        #Reward: (CLOSE - open) / (0.0001)
         precision = kwargs['precision']
         self.reward_pips = (self.data['Close'] - self.data['Open']).values / precision
 
@@ -130,7 +128,7 @@ class OandaSimulator():
         return self.states[self.curr_idx]
     def build_data_and_states(self):
         # Pull primary symbol from Oanda API
-        primary_data = self.api_Handle.get_history(self.instrument)
+        primary_data = self.api_Handle.get_history(self.instrument,HISTORICAL_DATA_LENGTH)
         assert primary_data is not None, "primary_data is not DataFrame"
 
         states_df = pd.DataFrame(index=primary_data.index)
@@ -141,7 +139,7 @@ class OandaSimulator():
         if len(self.other_pairs) > 0:
 
             for pair_name in self.other_pairs:
-                _symbol_data = self.api_Handle.get_history(pair_name)
+                _symbol_data = self.api_Handle.get_history(pair_name,HISTORICAL_DATA_LENGTH)
                 assert _symbol_data is not None, "{} _symbol_data is not DataFrame".format(pair_name)
                 #Attach to primary data
                 states_df.loc[:, "%s_Returns"%pair_name] = _symbol_data['Open'].pct_change()
@@ -190,6 +188,21 @@ class OandaSimulator():
 
         return new_obs, (THIS_TIME, THIS_OPEN, reward), done
 
+class Trade():
+    class Activation():
+        def __init__(self, time=0,price=0):
+            self.time = time
+            self.price = price
+    def __init__(self, instrument):
+        self.id = 0
+        self.entry_time = 0
+        self.exit_time = 0
+        self.entry_price = 0
+        self.exit_price = 0
+        self.profit = 0
+        self.duration = 0
+        self.type = None
+        self.instrument = instrument
 
 
 class Portfolio():
@@ -203,99 +216,7 @@ class Portfolio():
         self.api_Handle = kwargs['handle']
         self.instrument = kwargs['instrument']
         self.reset()
-    def newCandleHandler(self, action, **kwargs):
-        '''
-        IN Training/Testing mode, step returns action and reward
-        TRAIN/TEST MODE:
-        kwargs = {
-            'TIME' : curr_time,
-            'OPEN' :curr_open,
-            'REWARD': reward
-        }
-        '''
 
-        if self._isHoldingTrade:
-            #Increase trade duration
-            self.curr_trade['Trade Duration'] += 1
-
-            #Check if duration limit is reached
-            reached = self.curr_trade['Trade Duration'] >= self.trade_duration
-
-            if reached:
-                #Close Trade
-                self.closeTrade(**kwargs)
-            else:
-                #Continue Holding
-                return self.continueHolding(**kwargs)
-
-        if action == 2:
-            # Do Nothing
-            self.equity_curve.append(self.total_reward)
-            REWARD = 0
-            return action, REWARD
-
-        else:
-            #TAKE A TRADE
-            return self.openTrade(action=action, **kwargs)
-
-
-    def openTrade(self, action, **kwargs):
-        self.total_trades += 1
-        #Train/Test Mode
-        #Set cur_trade
-        self.curr_trade['ID'] = self.total_trades
-        TYPE = 'BUY' if action == 0 else 'SELL'
-        self.curr_trade['Type'] = TYPE
-
-        #Set Price and Time
-        self.curr_trade['Entry Time'] = kwargs['TIME']
-        self.curr_trade['Entry Price'] = kwargs['OPEN']
-
-        #Manipulate reward
-        reward = kwargs['REWARD']
-        multiplier = 1.0 if self.curr_trade['Type'] == 'BUY' else -1.0
-        REWARD = reward * multiplier
-
-
-        #Accumulate reward
-        self.curr_trade['Profit'] += REWARD
-        self.total_reward += REWARD
-
-        #Update Equity
-        self.equity_curve.append(self.total_reward)
-
-        self._isHoldingTrade = True
-        return action, REWARD
-
-
-    def closeTrade(self, **kwargs):
-        #Close the trade in Train/Test Mode
-        self.curr_trade['Exit Time'] = kwargs['TIME']
-        self.curr_trade['Exit Price'] = kwargs['OPEN']
-
-        #Recalculate reward based on this open (More accurate) thisOpen - EntryPrice
-        #Or we could leave curr_trade['Profit'] = lastClose - EntryPrice
-        '''
-        multiplier = 1.0 if self.curr_trade['Type'] == 'BUY' else -1.0
-        self.curr_trade['Profit'] = multiplier * \
-        (self.curr_trade['Exit Price'] - self.curr_trade['Entry Price'])
-        '''
-        self.journal.append(self.curr_trade)
-        self.reset_trade()
-
-    def reset_trade(self):
-        self.curr_trade = {
-            'ID':0,
-            'Entry Price':0,
-            'Exit Price':0,
-            'Entry Time':None,
-            'Exit Time':None ,
-            'Profit':0,
-            'Trade Duration':0,
-            'Type':None,
-            'Symbol': self.instrument
-            }
-        self._isHoldingTrade = False
     def reset(self):
 
         #Cumulative reward in this run (in pips)
@@ -310,25 +231,81 @@ class Portfolio():
         self.equity_curve = [] #TO BE OUTSOURCED TO AGENT
 
         #Trade Profile
-        self.reset_trade()
-        self.journal = [] #Collection of trades
+        self.trade = None
+        self.trades = [] #Collection of trades
 
-    def continueHolding(self, **kwargs):
+    def newCandleHandler(self, action,time,open,reward):
+        if self.trade is not None:
+            #Increase trade duration
+            self.trade.duration += 1
+
+            #Check if duration limit is reached
+            reached = self.trade.duration >= self.trade_duration
+
+            if reached:
+                #Close Trade
+                self.closeTrade(time,open)
+            else:
+                #Continue Holding
+                return self.continueHolding(reward)
+
+        if action == 2:
+            # Do Nothing
+            self.equity_curve.append(self.total_reward)
+            return action, 0
+        #TAKE A TRADE
+        return self.openTrade(action, time,open,reward)
+
+
+    def openTrade(self, action, time,open,reward):
+        self.total_trades += 1
+        #Train/Test Mode
+        self.trade = Trade(self.instrument)
+
+        self.trade.id = self.total_trades
+        self.trade.type = 'BUY' if action == 0 else 'SELL'
+
+        #Set Price and Time
+        self.trade.entry_time = time
+        self.trade.entry_price = open
+
+        #Manipulate reward
+        multiplier = 1.0 if self.trade.type == 'BUY' else -1.0
+        reward = reward * multiplier
+
+
+        #Accumulate reward
+        self.trade.profit += reward
+        self.total_reward += reward
+
+        #Update Equity
+        self.equity_curve.append(self.total_reward)
+
+        return action, reward
+
+
+    def closeTrade(self, time,open):
+        #Close the trade in Train/Test Mode
+        self.trade.exit_time = time
+        self.trade.exit_price = open
+        self.trades.append(self.trade)
+        self.trade = None
+
+    def continueHolding(self, reward):
         #Reset the action
         action = 2
 
         #Manipulate reward
-        reward = kwargs['REWARD']
-        multiplier = 1.0 if self.curr_trade['Type'] == 'BUY' else -1.0
-        REWARD = reward * multiplier
+        multiplier = 1.0 if self.trade.type == 'BUY' else -1.0
+        reward = reward * multiplier
 
         #Accumulate reward
-        self.total_reward += REWARD
-        self.curr_trade['Profit'] += REWARD
+        self.total_reward += reward
+        self.trade.profit += reward
 
 
         #Update Equity
         self.equity_curve.append(self.total_reward)
 
 
-        return action, REWARD
+        return action, reward

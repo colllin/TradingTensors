@@ -7,7 +7,7 @@ import requests
 from requests.exceptions import RequestException
 from talib import ATR, BBANDS
 
-from settings.serverconfig import ID, TOKEN, HISTORICAL_DATA_LENGTH
+from settings.serverconfig import ID, TOKEN
 
 DEFAULT_URL ={
     'practice': 'https://api-fxpractice.oanda.com',
@@ -28,12 +28,12 @@ class OandaHandler(object):
         self.granularity = granularity
 
         self.DEFAULT_URL = DEFAULT_URL[mode]
-    def get_history(self, instrument):
+    def get_history(self, instrument, count):
         url = self.DEFAULT_URL + '/v3/instruments/{}/candles'.format(instrument)
 
         #Parameters required to retrieve history
         params = {
-          "count": HISTORICAL_DATA_LENGTH,
+          "count": count,
           "granularity": self.granularity,
           "price": "M"
         }
