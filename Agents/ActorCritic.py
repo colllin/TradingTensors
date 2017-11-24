@@ -7,7 +7,6 @@ from queue import LifoQueue
 
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 import tensorflow as tf
 from tensorflow import layers
 
@@ -392,33 +391,4 @@ class A3CAgent(object):
         self.summaryPlot()
 
     def summaryPlot(self):
-        trades = pd.DataFrame([vars(f) for f in self.trades])
-
-        buys = trades.loc[trades.type=='BUY', :]
-        sells = trades.loc[trades.type=='SELL', :]
-
-        print ("Summary Statistics (Test)\n")
-
-        print ("Total Trades            | {}        (Buy){}       (Sell){} "\
-            .format(trades.shape[0], buys.shape[0], sells.shape[0]))
-
-        #Calculate Profit breakdown
-        total_profit = trades.profit.sum()
-        buy_profit = buys.profit.sum()
-        sell_profit = sells.profit.sum()
-
-        print ("Profit (in pips)        | %.2f   (Buy)%.2f   (Sell)%.2f"\
-            %(total_profit, buy_profit, sell_profit))
-
-        #Calculate Win Ratio
-        total_percent = (trades.loc[trades.profit>0,'profit'].count()/ trades.shape[0]) * 100
-        buy_percent = (buys.loc[buys.profit>0, 'profit'].count()/buys.shape[0]) * 100
-        sell_percent = (sells.loc[sells.profit>0, 'profit'].count()/sells.shape[0]) * 100
-        print ("Win Ratio               | %.2f%%    (Buy)%.2f%%   (Sell)%.2f %%"%(total_percent, buy_percent, sell_percent))
-
-        #Duration
-        duration = trades.duration.mean()
-        print ("Average Trade Duration  | %.2f"%(duration))
-
-
         ohlcPlot(self.trades, self.env.simulator.data, self.equity_curves)

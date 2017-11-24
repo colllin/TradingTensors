@@ -2,10 +2,11 @@ import matplotlib.dates as mdates
 import matplotlib.finance as mf
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 
 CHART_SIZE = (20,10)
 
-def rewardPlot(record, best_models, TYPE, top_n=3):
+def rewardPlot(record, best_models, type, top_n=3):
 
     arr = np.asarray(record)
 
@@ -20,9 +21,9 @@ def rewardPlot(record, best_models, TYPE, top_n=3):
 
     fig = plt.figure(figsize=CHART_SIZE)
     ax = fig.add_subplot(111)
-    color = 'b-' if TYPE=='Total' else 'r-'
+    color = 'b-' if type=='Total' else 'r-'
     ax.plot(record, color)
-    ax.set_title("%s Reward (Showing Top %s)"%(TYPE,top_n), fontdict={'fontsize':20})
+    ax.set_title("%s Reward (Showing Top %s)"%(type,top_n), fontdict={'fontsize':20})
     ax.set_xlabel("Episodes")
 
 
@@ -40,10 +41,33 @@ def rewardPlot(record, best_models, TYPE, top_n=3):
 
 
 def ohlcPlot(trades, ohlc, equity_curve):
+    trades = pd.DataFrame([vars(f) for f in trades])
 
-    #Filter out buys and sells
-    buys = [trade for trade in trades if trade.type=='BUY']
-    sells = [trade for trade in trades if trade.type=='SELL']
+    buys = trades.loc[trades.type=='BUY', :]
+    sells = trades.loc[trades.type=='SELL', :]
+    print(buys.columns)
+    print ("Summary Statistics (Test)\n")
+
+    print ("Total Trades            | {}        (Buy){}       (Sell){} "\
+        .format(trades.shape[0], buys.shape[0], sells.shape[0]))
+
+    #Calculate Profit breakdown
+    total_profit = trades.profit.sum()
+    buy_profit = buys.profit.sum()
+    sell_profit = sells.profit.sum()
+
+    print ("Profit (in pips)        | %.2f   (Buy)%.2f   (Sell)%.2f"\
+        %(total_profit, buy_profit, sell_profit))
+
+    #Calculate Win Ratio
+    total_percent = (trades.loc[trades.profit>0,'profit'].count()/ trades.shape[0]) * 100
+    buy_percent = (buys.loc[buys.profit>0, 'profit'].count()/buys.shape[0]) * 100
+    sell_percent = (sells.loc[sells.profit>0, 'profit'].count()/sells.shape[0]) * 100
+    print ("Win Ratio               | %.2f%%    (Buy)%.2f%%   (Sell)%.2f %%"%(total_percent, buy_percent, sell_percent))
+
+    #Duration
+    duration = trades.duration.mean()
+    print ("Average Trade Duration  | %.2f"%(duration))
 
     #make OHLC ohlc matplotlib friendly
     datetime_index = mdates.date2num(ohlc.index.to_pydatetime())
@@ -73,26 +97,20 @@ def ohlcPlot(trades, ohlc, equity_curve):
         colorup='green',
         colordown='red'
     )
-
-
     #Buy indicator
-
     ax.plot(
-        mdates.date2num([buy.entry_time for buy in buys]),
-        [buy.entry_price-0.001 for buy in buys],
+        mdates.date2num([time for time in buys.entry_time]),
+        [price-0.001 for price in buys.entry_price],
         'b^',
         alpha=1.0
     )
-
     #Sell indicator
     ax.plot(
-        mdates.date2num([sell.entry_time for sell in sells]),
-        [sell.entry_price+0.001 for sell in sells],
+        mdates.date2num([time for time in sells.entry_time]),
+        [price+0.001 for price in sells.entry_price],
         'rv',
         alpha=1.0
     )
-
-
     #Secondary Plot
     ax2.set_title("Equity")
     ax2.plot(equity_curve)
@@ -101,4 +119,3 @@ def ohlcPlot(trades, ohlc, equity_curve):
         tick.set_rotation(45)
 
     plt.show()
-
