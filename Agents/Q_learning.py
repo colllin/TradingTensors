@@ -48,7 +48,7 @@ class DQNAgent():
         self.env = env
         self.directory = directory
         self.model_directory = os.path.join(self.directory,'episode%s.ckpt')
-        self.ddqn = DDQN(env.observation_space, self.env.action_space)
+        self.ddqn = DDQN(env.observation_space)
         self.best_model = BestModels()
     def _episodeLoop(self,
             session,
@@ -107,7 +107,7 @@ class DQNAgent():
         average_pips_per_trade = self.env.portfolio.total_reward / self.env.portfolio.total_trades
         self.trades.append(self.env.portfolio.trades)
         self.avg_rewards.append(average_pips_per_trade)
-        self.rewards.append(self.env.portfolio.total_reward)
+        self.total_rewards.append(self.env.portfolio.total_reward)
         self.equity_curves.append(self.env.portfolio.equity_curve)
 
 
@@ -138,7 +138,7 @@ class DQNAgent():
         for file in os.listdir(self.directory):
             os.remove(os.path.join(self.directory, file))
 
-        step_per_episode = self.env.simulator.train_end_idx - self.env.simulator.train_start_idx - 2
+        step_per_episode = self.env.simulator.train_end_idx - 2
         total_steps = record_episode_after * step_per_episode
         #Create a Transition memory storage
         replaybuffer = ReplayBuffer(step_per_episode * train_episodes * 1.2)
@@ -157,15 +157,14 @@ class DQNAgent():
         #Update Target Network to Online Network
         self.ddqn.update(session)
 
-        #Reseting all tools
         self.trades = []
-        self.rewards = []
+        self.total_rewards = []
         self.avg_rewards = []
         self.equity_curves = []
         learning_step = 0
 
         for episode in range(1, train_episodes+1):
-            observation = self.env.reset(train=True)
+            observation = self.env.reset(training=True)
             while True:
                 random_choice, exploration = self._useRondomChoice(learning_step,total_steps)
                 done, learning_step, observation = self._episodeLoop(
@@ -181,22 +180,18 @@ class DQNAgent():
             self._afterDone(session,record_episode_after,episode,exploration)
             if exploration == FINAL_P and \
                 len(self.best_model.records) == 10 and \
-                np.mean(self.rewards[-16:-1]) > convergence_reward: # 最後の15個が予定のrewardを超えていたら
+                np.mean(self.total_rewards[-16:-1]) > convergence_reward: # 最後の15個が予定のrewardを超えていたら
                 print ("CONVERGED!")
                 break
     def trainSummary(self, TOP_N=3):
 
         #Plot Total Reward
-        rewardPlot(self.rewards, self.best_model.records, 'Total', TOP_N)
-
-        #Plot Average Reward
-        rewardPlot(self.avg_rewards, self.best_model.records, "Average", TOP_N)
-
+        rewardPlot(self.total_rewards, self.best_model.records, 'Total', TOP_N)
         for i,m in enumerate(self.best_model.records):
             episode = m[0]
             print ("########   RANK {}   ###########".format(i+1))
             print ("Episode          | {}".format(episode))
-            print ("Total Reward     | {0:.2f}".format(self.rewards[episode-1]))
+            print ("Total Reward     | {0:.2f}".format(self.total_rewards[episode-1]))
             print ("Average Reward   | {0:.2f}".format(self.avg_rewards[episode-1]))
 
     def episodeReview(self, episode):
@@ -212,7 +207,7 @@ class DQNAgent():
         saver = tf.train.Saver()
         saver.restore(session, self.model_directory % episode)
 
-        observation = self.env.reset(train=False)
+        observation = self.env.reset(training=False)
         while True:
             #Select Action
             action = self.ddqn.choose_action(
@@ -228,6 +223,6 @@ class DQNAgent():
         average_pips_per_trade = self.env.portfolio.total_reward / self.env.portfolio.total_trades
         self.trades.append(self.env.portfolio.trades)
         self.avg_rewards.append(average_pips_per_trade)
-        self.rewards.append(self.env.portfolio.total_reward)
+        self.total_rewards.append(self.env.portfolio.total_reward)
         self.equity_curves.append(self.env.portfolio.equity_curve)
         self.episodeReview(0)

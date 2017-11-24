@@ -16,7 +16,7 @@ def huber_loss(error, delta=1.0):
     )
 
 class DQN(object):
-    def __init__(self, observations, actions , scope_name):
+    def __init__(self, observations, actions, scope_name):
         with tf.variable_scope(scope_name):
             self.features = tf.placeholder(tf.float32, [None, observations])
             self.dropout = tf.placeholder(tf.float32)
@@ -54,11 +54,11 @@ class DQN(object):
             # create_optimizer end
             self.variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope_name)
 class DDQN(object):
-    def __init__(self, observations, actions):
+    def __init__(self, observations):
         self.observations = observations
-        self.actions = actions
+        self.actions = 3 # buy sell neutral
         for name in ['online','target']:
-            dqn = DQN(observations, actions, name)
+            dqn = DQN(observations, self.actions, name)
             setattr(self, name, dqn)
     def update(self,session):
         #Copy variables of online network to target network

@@ -7,9 +7,15 @@ import pandas as pd
 CHART_SIZE = (20,10)
 
 def rewardPlot(record, best_models, type, top_n=3):
+    fig = plt.figure(figsize=CHART_SIZE)
+    ax = fig.add_subplot(111)
+    color = 'b-' if type=='Total' else 'r-'
+    ax.plot(record, color)
+    ax.set_title("Rewards ", fontdict={'fontsize':20})
+    ax.set_title("%s Rewards"%(type), fontdict={'fontsize':20})
+    ax.set_xlabel("Episodes")
 
     arr = np.asarray(record)
-
     #Return the index based on top n
     top_10_episodes = [x[0] for x in best_models]
     top_10_index = np.array(top_10_episodes) -1
@@ -18,34 +24,19 @@ def rewardPlot(record, best_models, type, top_n=3):
     top_n_index = top_10_index[:top_n]
     top_n_rewards = arr[top_n_index]
 
-
-    fig = plt.figure(figsize=CHART_SIZE)
-    ax = fig.add_subplot(111)
-    color = 'b-' if type=='Total' else 'r-'
-    ax.plot(record, color)
-    ax.set_title("%s Reward (Showing Top %s)"%(type,top_n), fontdict={'fontsize':20})
-    ax.set_xlabel("Episodes")
-
-
     textString = "TOP {}: \n".format(top_n)
     for i, r in enumerate(top_n_rewards):
-
         epi= top_n_episodes[i]
-
         textString += "Episode {}: {} \n".format(epi, record[epi-1])
-
     ax.text(0.75, 0.5, textString, fontsize=10, verticalalignment='top',transform=ax.transAxes,
-    bbox={'alpha':0.5, 'pad':10})
-
+            bbox={'alpha':0.5, 'pad':10})
     plt.show()
-
 
 def ohlcPlot(trades, ohlc, equity_curve):
     trades = pd.DataFrame([vars(f) for f in trades])
 
     buys = trades.loc[trades.type=='BUY', :]
     sells = trades.loc[trades.type=='SELL', :]
-    print(buys.columns)
     print ("Summary Statistics (Test)\n")
 
     print ("Total Trades            | {}        (Buy){}       (Sell){} "\
