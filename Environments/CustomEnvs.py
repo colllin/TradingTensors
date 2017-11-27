@@ -19,7 +19,7 @@ class OandaEnv():
             granularity=granularity,
             instrument=instrument,
             other_pairs=other_pairs,
-            lookback=lookback_period,
+            lookback_period=lookback_period,
             training=training,
         )
         self.portfolio = Portfolio(
@@ -46,13 +46,13 @@ class OandaEnv():
 
 class OandaSimulator():
 
-    def __init__(self, granularity, instrument, other_pairs, lookback, training):
+    def __init__(self, granularity, instrument, other_pairs, lookback_period, training):
         self.api_Handle = OandaHandler(granularity)
 
         self.instrument = instrument
         # Attributes to create state space
         self.other_pairs = other_pairs  # List of other pairs
-        self.lookback = lookback  # how many periods to lookback
+        self.lookback_period = lookback_period  # how many periods to lookback
 
         # Attributes for training model
         # Percentage of data to be used for training, to be used in
@@ -80,8 +80,8 @@ class OandaSimulator():
 
         # Shift Data if there are any lookback period
         original = states_df.copy()
-        if self.lookback > 0:
-            for i in range(0,self.lookback):
+        if self.lookback_period > 0:
+            for i in range(0,self.lookback_period):
                 _shifted = original.shift(i+1)
                 states_df = states_df.join(_shifted, rsuffix="_t-{}".format(i+1))
 
