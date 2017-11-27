@@ -1,33 +1,67 @@
 import numpy as np
 import pandas as pd
-
-from settings.serverconfig import HISTORICAL_DATA_LENGTH, TRAIN_SPLIT
-from functions.planetry_functions import get_planet_coordinates
+from settings.serverconfig import HISTORICAL_DATA_LENGTH, TRAIN_SPLIT, ID, TOKEN
 from functions.utils import OandaHandler
+from Fx import OANDA
+from sklearn.model_selection import train_test_split
 
+class Observation():
+    def __init__(self,
+                 key,
+                 account_id,
+                 enviroment='practice'):
+        self.oanda = OANDA(key=key,account_id=account_id,enviroment='practice')
+    def create(self,
+               instrument,
+               granularity,
+               count,
+               lookback_period):
+        _ ,self.instrument = self.oanda.api.instruments(instruments=[instrument])
+        self.instrument = self.instrument[0]
+        params = {
+            'instrument' : instrument,
+            'granularity' : granularity,
+            "count" : count
+        };
+        _, candles = self.oanda.api.candles(params)
+        states = pd.DataFrame(index=candles.index)
+        states['open'] = candles['open'].pct_change()
+        # 平均を引いて 標準偏差で割る
+        # http://data-science.gr.jp/theory/tbs_standardization.html
+        states.open = (states.open - states.open.mean()) / states.open.std()
 
+        if lookback_period > 0:
+            original = states.copy()
+            for i in range(0,lookback_period):
+                shifted = original.shift(i+1)
+                states = states.join(shifted, rsuffix="_t-{}".format(i+1))
+        states.dropna(axis=0, how='any', inplace=True)
+        self.states = states
+        '''States Normalization ここでやるのと微妙に値が違う
+        # 平均を引いて 標準偏差で割る
+        # http://data-science.gr.jp/theory/tbs_standardization.html
+        self.states = (states.values - np.mean(states.values, 0)) / np.std(states.values, 0)'''
+
+        candles = candles.loc[states.index.tolist(), :]
+        candles['reward'] = ( candles.close - candles.open ) / (10 ** self.instrument.pipLocation)
+
+        self.candles = candles
 class OandaEnv():
     def __init__(self,
                  instrument,
                  granularity,
                  training=True,
-                 other_pairs=[],
                  trade_duration=1,
                  lookback_period=0):
         self.api_Handle = OandaHandler(granularity)
 
         self.instrument = instrument
         # Attributes to create state space
-        self.other_pairs = other_pairs  # List of other pairs
         self.lookback_period = lookback_period  # how many periods to lookback
 
         # Attributes for training model
         # Percentage of data to be used for training, to be used in
         self.training = training  # Controlled by Environment
-
-        #For Normalization
-        self.train_mean = None
-        self.train_std = None
 
         # Pull primary symbol from Oanda API
         primary_data = self.api_Handle.get_history(self.instrument,HISTORICAL_DATA_LENGTH)
@@ -37,17 +71,9 @@ class OandaEnv():
 
         states_df['Returns'] = primary_data['Open'].pct_change()
 
-        #Get Return of additional pairs
-        if len(self.other_pairs) > 0:
-            for pair_name in self.other_pairs:
-                _symbol_data = self.api_Handle.get_history(pair_name,HISTORICAL_DATA_LENGTH)
-                assert _symbol_data is not None, "{} _symbol_data is not DataFrame".format(pair_name)
-                #Attach to primary data
-                states_df.loc[:, "%s_Returns"%pair_name] = _symbol_data['Open'].pct_change()
-
         # Shift Data if there are any lookback period
-        original = states_df.copy()
         if self.lookback_period > 0:
+            original = states_df.copy()
             for i in range(0,self.lookback_period):
                 _shifted = original.shift(i+1)
                 states_df = states_df.join(_shifted, rsuffix="_t-{}".format(i+1))
@@ -58,8 +84,6 @@ class OandaEnv():
 
         '''States Normalization'''
         self.states = (states_df.values - np.mean(states_df.values, 0)) / np.std(states_df.values, 0)
-
-        self.observation_space = self.states.shape[1]
 
         #To be used in every step of Simulator
         self.Open = self.data.Open.values
@@ -116,17 +140,21 @@ class OandaEnv():
         #Return the first instance of the state space
         return self.states[self.curr_idx]
 class Trade():
-    def __init__(self, instrument):
-        self.id = 0
-        self.entry_time = 0
+    def __init__(self,
+            instrument,
+            id,
+            type,
+            time,
+            open):
+        self.id = id
+        self.entry_time = time
         self.exit_time = 0
-        self.entry_price = 0
+        self.entry_price = open
         self.exit_price = 0
         self.profit = 0
         self.duration = 0
-        self.type = None
+        self.type = type
         self.instrument = instrument
-
 
 class Portfolio():
     '''
@@ -180,14 +208,13 @@ class Portfolio():
     def openTrade(self, action, time,open,reward):
         self.total_trades += 1
         #Train/Test Mode
-        self.trade = Trade(self.instrument)
-
-        self.trade.id = self.total_trades
-        self.trade.type = 'BUY' if action == 0 else 'SELL'
-
-        #Set Price and Time
-        self.trade.entry_time = time
-        self.trade.entry_price = open
+        type = 'BUY' if action == 0 else 'SELL'
+        self.trade = Trade(
+            self.instrument,
+            self.total_trades,
+            type,
+            time,
+            open)
 
         reward = self._updateProperties(reward)
 

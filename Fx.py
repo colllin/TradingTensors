@@ -74,13 +74,18 @@ class API():
         return err , data
     def accounts(self):
         return self._get('accounts','accounts')
-    def instruments(self,account_id=None):
+    def instruments(self,account_id=None,instruments=None):
         if account_id is None:
             account_id = self.account_id
+        params={}
+        if instruments is not None:
+            params['instruments'] = ','.join(instruments)
         return self._get(
             'accounts/' + account_id + '/instruments',
             'instruments',
-            Instrument)
+            Instrument,
+            params)
+
     def candles(self,params):
         instrument = params['instrument']
         params.pop('instrument',None)
