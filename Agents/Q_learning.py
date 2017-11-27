@@ -48,7 +48,7 @@ class DQNAgent():
         self.env = env
         self.directory = directory
         self.model_directory = os.path.join(self.directory,'episode%s.ckpt')
-        self.ddqn = DDQN(env.observation_space)
+        self.ddqn = DDQN(env.states.shape[1])
         self.best_model = BestModels()
     def _episodeLoop(self,
             session,
@@ -99,8 +99,8 @@ class DQNAgent():
     def _afterDone(self,session,record_episode_after,episode,exploration):
         #Close the Last Trade in portfolio if any
         if self.env.portfolio.trade is not None:
-            lastTime = self.env.simulator.data.index[self.env.simulator.curr_idx].to_pydatetime()
-            lastOpen = self.env.simulator.data['Open'].iloc[self.env.simulator.curr_idx]
+            lastTime = self.env.data.index[self.env.curr_idx].to_pydatetime()
+            lastOpen = self.env.data['Open'].iloc[self.env.curr_idx]
             self.env.portfolio.closeTrade(time=lastTime, open=lastOpen)
 
         #Update Bookkeeping Tools
@@ -138,7 +138,7 @@ class DQNAgent():
         for file in os.listdir(self.directory):
             os.remove(os.path.join(self.directory, file))
 
-        step_per_episode = self.env.simulator.train_end_idx - 2
+        step_per_episode = self.env.train_end_idx - 2
         total_steps = record_episode_after * step_per_episode
         #Create a Transition memory storage
         replaybuffer = ReplayBuffer(step_per_episode * train_episodes * 1.2)
@@ -196,7 +196,7 @@ class DQNAgent():
 
     def episodeReview(self, episode):
         index = episode - 1
-        ohlcPlot(self.trades[index], self.env.simulator.data, self.equity_curves[index])
+        ohlcPlot(self.trades[index], self.env.data, self.equity_curves[index])
     def test(self, episode):
         '''
         episode: int, episode to be selected

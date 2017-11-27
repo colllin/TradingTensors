@@ -207,11 +207,8 @@ class Agent(object):
 
         self.env = env()
 
-        #Define states dimension
-        num_states = self.env.observation_space
-
         self.name = name
-        self.local_brain = Brain(states=num_states, name=self.name, Global_Net=global_network)
+        self.local_brain = Brain(states=self.env.states.shape[1], name=self.name, Global_Net=global_network)
 
     def work(
         self, coord, session,
@@ -273,8 +270,8 @@ class Agent(object):
 
                 if done:
                     if self.env.portfolio.trade is not None:
-                        lastTime = self.env.simulator.data.index[self.env.simulator.curr_idx].to_pydatetime()
-                        lastOpen = self.env.simulator.data['Open'].iloc[self.env.simulator.curr_idx]
+                        lastTime = self.env.data.index[self.env.curr_idx].to_pydatetime()
+                        lastOpen = self.env.data['Open'].iloc[self.env.curr_idx]
                         self.env.portfolio.closeTrade(time=lastTime, open=lastOpen)
 
                     #Use portfolio reward tracker for greater accuracy
@@ -379,8 +376,8 @@ class A3CAgent(object):
             obs = next_obs
 
         if self.env.portfolio.trade is not None:
-            lastTime = self.env.simulator.data.index[self.env.simulator.curr_idx].to_pydatetime()
-            lastOpen = self.env.simulator.data['Open'].iloc[self.env.simulator.curr_idx]
+            lastTime = self.env.data.index[self.env.curr_idx].to_pydatetime()
+            lastOpen = self.env.data['Open'].iloc[self.env.curr_idx]
             self.env.portfolio.closeTrade(time=lastTime, open=lastOpen)
 
         self.trades = self.env.portfolio.trades
@@ -391,4 +388,4 @@ class A3CAgent(object):
         self.summaryPlot()
 
     def summaryPlot(self):
-        ohlcPlot(self.trades, self.env.simulator.data, self.equity_curves)
+        ohlcPlot(self.trades, self.env.data, self.equity_curves)

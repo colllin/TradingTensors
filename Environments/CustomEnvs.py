@@ -14,39 +14,6 @@ class OandaEnv():
                  other_pairs=[],
                  trade_duration=1,
                  lookback_period=0):
-
-        self.simulator = OandaSimulator(
-            granularity=granularity,
-            instrument=instrument,
-            other_pairs=other_pairs,
-            lookback_period=lookback_period,
-            training=training,
-        )
-        self.portfolio = Portfolio(
-            trade_duration=trade_duration,
-            instrument=instrument)
-
-        self.training = training
-        self.observation_space = self.simulator.states_dim
-
-    def step(self, action):
-        observation, portfolio_feed, done = self.simulator.step()
-
-        action, reward = self.portfolio.newCandleHandler(
-            action=action, time=portfolio_feed[0],
-            open=portfolio_feed[1], reward=portfolio_feed[2])
-
-        return observation, action, reward, done
-
-    def reset(self, training):
-        self.training = training
-        self.portfolio.reset()
-        self.simulator.training = training
-        return self.simulator.reset()
-
-class OandaSimulator():
-
-    def __init__(self, granularity, instrument, other_pairs, lookback_period, training):
         self.api_Handle = OandaHandler(granularity)
 
         self.instrument = instrument
@@ -92,7 +59,7 @@ class OandaSimulator():
         '''States Normalization'''
         self.states = (states_df.values - np.mean(states_df.values, 0)) / np.std(states_df.values, 0)
 
-        self.states_dim = self.states.shape[1]
+        self.observation_space = self.states.shape[1]
 
         #To be used in every step of Simulator
         self.Open = self.data.Open.values
@@ -113,8 +80,29 @@ class OandaSimulator():
         self.test_start_idx = self.train_end_idx + 1
         self.test_end_idx = data_count - 1
 
-        self.reset() #Reset to initialize curr_idx and end_idx
-    def reset(self):
+        self.portfolio = Portfolio(
+            trade_duration=trade_duration,
+            instrument=instrument)
+
+        self.reset(training) #Reset to initialize curr_idx and end_idx
+
+    def step(self, action):
+        reward = self.reward_pips[self.curr_idx] #Current Reward: Current Close - Close Open
+        THIS_OPEN = self.Open[self.curr_idx] #Current Open
+        THIS_TIME = self.Dates[self.curr_idx]
+        self.curr_idx += 1
+        done = self.curr_idx >= self.end_idx
+        new_obs = self.states[self.curr_idx] #Next State
+
+        action, reward = self.portfolio.newCandleHandler(
+            action=action, time=THIS_TIME,
+            open=THIS_OPEN, reward=reward)
+
+        return new_obs, action, reward, done
+
+    def reset(self, training):
+        self.training = training
+        self.portfolio.reset()
         if self.training:
             self.curr_idx = 0
             self.end_idx = self.train_end_idx
@@ -127,19 +115,6 @@ class OandaSimulator():
 
         #Return the first instance of the state space
         return self.states[self.curr_idx]
-
-
-    def step(self):
-
-        reward = self.reward_pips[self.curr_idx] #Current Reward: Current Close - Close Open
-        THIS_OPEN = self.Open[self.curr_idx] #Current Open
-        THIS_TIME = self.Dates[self.curr_idx]
-        self.curr_idx += 1
-        done = self.curr_idx >= self.end_idx
-        new_obs = self.states[self.curr_idx] #Next State
-
-        return new_obs, (THIS_TIME, THIS_OPEN, reward), done
-
 class Trade():
     def __init__(self, instrument):
         self.id = 0
