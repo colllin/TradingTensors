@@ -52,8 +52,9 @@ class OandaEnv():
                  granularity,
                  training=True,
                  trade_duration=1,
-                 lookback_period=0):
-        self.api_Handle = OandaHandler(granularity)
+                 lookback_period=0,
+                 mode='practice'):
+        self.api_Handle = OandaHandler(granularity, mode)
 
         self.instrument = instrument
         # Attributes to create state space
