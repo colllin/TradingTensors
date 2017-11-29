@@ -60,6 +60,8 @@ class OandaEnv():
         # Attributes to create state space
         self.lookback_period = lookback_period  # how many periods to lookback
 
+        self.observation_space = 4
+
         # Attributes for training model
         # Percentage of data to be used for training, to be used in
         self.training = training  # Controlled by Environment
