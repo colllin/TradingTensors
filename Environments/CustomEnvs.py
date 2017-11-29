@@ -62,10 +62,6 @@ class OandaEnv():
 
         self.observation_space = 4
 
-        # Attributes for training model
-        # Percentage of data to be used for training, to be used in
-        self.training = training  # Controlled by Environment
-
         # Pull primary symbol from Oanda API
         primary_data = self.api_Handle.get_history(self.instrument,HISTORICAL_DATA_LENGTH)
         assert primary_data is not None, "primary_data is not DataFrame"

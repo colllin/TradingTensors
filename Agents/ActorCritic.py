@@ -226,7 +226,7 @@ class Agent(object):
             memory_s, memory_a, memory_r  = [], [], []
 
             #Reset Environment and obtain initial state
-            s = self.env.reset(train=True)
+            s = self.env.reset(training=True)
 
             while True:
 
@@ -364,7 +364,7 @@ class A3CAgent(object):
 
         saver.restore(session, self.latest_model)
 
-        obs = self.env.reset(train=train)
+        obs = self.env.reset(training=train)
         DONE = False
 
         while not DONE:
