@@ -208,7 +208,11 @@ class Agent(object):
         self.env = env()
 
         self.name = name
-        self.local_brain = Brain(states=self.env.states.shape[1], name=self.name, Global_Net=global_network)
+        self.local_brain = Brain(
+            states=self.env.states.shape[1],
+            name=self.name,
+            Global_Net=global_network
+        )
 
     def work(
         self, coord, session,
@@ -301,10 +305,11 @@ class A3CAgent(object):
         self.env = self.env_init()
 
         self.global_net = Brain(
-            self.env.observation_space,
+            # self.env.observation_space,
+            self.env.states.shape[1],
             name='Global',
             isGlobal=True
-            )
+        )
         self.workers = self.create_workers()
         self.PATH = PATH
         self.latest_model = os.path.join(self.PATH, 'latest.ckpt')

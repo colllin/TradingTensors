@@ -1,5 +1,5 @@
 #Choose either Shared or Separate AC Network
-SHARED = False 
+SHARED = False
 
 #Separate Network
 ACTOR_LAYER = [64]
@@ -9,7 +9,7 @@ CRITIC_LAYER = [128]
 SHARED_LAYER = [128, 64]
 
 #Hyperparams
-NUM_WORKERS = 4
+NUM_WORKERS = 8
 GAMMA = 0.99
 LEARNING_RATE = 0.001
 

@@ -60,8 +60,6 @@ class OandaEnv():
         # Attributes to create state space
         self.lookback_period = lookback_period  # how many periods to lookback
 
-        self.observation_space = 4
-
         # Pull primary symbol from Oanda API
         primary_data = self.api_Handle.get_history(self.instrument,HISTORICAL_DATA_LENGTH)
         assert primary_data is not None, "primary_data is not DataFrame"
