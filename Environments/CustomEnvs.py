@@ -101,11 +101,26 @@ class OandaEnv():
         self.test_start_idx = self.train_end_idx + 1
         self.test_end_idx = data_count - 1
 
-        self.portfolio = Portfolio(
+        currencies = instrument.split('_')
+        self.portfolio = Portfolio2(
+            currencies=currencies,
             trade_duration=trade_duration,
             instrument=instrument)
 
         self.reset(training) #Reset to initialize curr_idx and end_idx
+
+    def actions(self):
+        """
+        The actions are aligned with the available currencies that we can hold.
+        One model must hold all of its capital in a single currency.
+        To diversify your capital, run multiple bots, and consider training them individually.
+        """
+        actions = {}
+        for c,i in enumerate(self.currencies):
+            actions[c] = i
+
+        return actions
+        # return range(len(self.currencies))
 
     def step(self, action):
         reward = self.reward_pips[self.curr_idx] #Current Reward: Current Close - Close Open
@@ -180,6 +195,92 @@ class Portfolio():
         self.trades = [] #Collection of trades
 
     def newCandleHandler(self, action,time,open,reward):
+        if self.trade is not None:
+            #Increase trade duration
+            self.trade.duration += 1
+
+            #Check if duration limit is reached
+            if self.trade.duration >= self.trade_duration:
+                #Close Trade
+                self.closeTrade(time,open)
+            else:
+                #Continue Holding
+                reward = self._updateProperties(reward)
+                #Reset the action 2
+                return 2, reward
+
+        if action == 2:
+            # Do Nothing
+            self.equity_curve.append(self.total_reward)
+            return action, 0
+        #TAKE A TRADE
+        return self.openTrade(action, time,open,reward)
+
+
+    def openTrade(self, action, time,open,reward):
+        self.total_trades += 1
+        #Train/Test Mode
+        type = 'BUY' if action == 0 else 'SELL'
+        self.trade = Trade(
+            self.instrument,
+            self.total_trades,
+            type,
+            time,
+            open)
+
+        reward = self._updateProperties(reward)
+
+        return action, reward
+    def _updateProperties(self,reward):
+        #Manipulate reward
+        multiplier = 1.0 if self.trade.type == 'BUY' else -1.0
+        reward = reward * multiplier
+
+
+        #Accumulate reward
+        self.trade.profit += reward
+        self.total_reward += reward
+
+        #Update Equity
+        self.equity_curve.append(self.total_reward)
+        return reward
+
+    def closeTrade(self, time,open):
+        #Close the trade in Train/Test Mode
+        self.trade.exit_time = time
+        self.trade.exit_price = open
+        self.trades.append(self.trade)
+        self.trade = None
+
+class Portfolio2():
+    '''
+    Portfolio2 tracks account balances in primary and alternative currency, and a "net worth" value in the primary currency.
+    FIXME: Consider StopLoss!!!
+    No StopLoss is required, trades are closed automatically once they reach the specified duration
+    '''
+    def __init__(self,trade_duration,instrument):
+
+        self.trade_duration = trade_duration
+        self.instrument = instrument
+        self.reset()
+
+    def reset(self):
+
+        #Cumulative reward in this run (in pips)
+        self.total_reward = 0
+
+        #Cumulative trades in this run
+        self.total_trades = 0
+
+        #History of cumulative reward
+        self.equity_curve = [] #TO BE OUTSOURCED TO AGENT
+
+        #Trade Profile
+        self.trade = None
+        self.trades = [] #Collection of trades
+
+    def newCandleHandler(self, action,time,open,reward):
+        # Close open trades if they reach the max trade duration
         if self.trade is not None:
             #Increase trade duration
             self.trade.duration += 1
