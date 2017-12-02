@@ -19,13 +19,13 @@ GLOBAL_REWARDS = []
 
 #Architecture of the Actor-Critic Network
 class Brain(object):
-    def __init__(self, states, name, Global_Net=None, isGlobal=False):
-        self.n_actions = 3 #Number of discrete actions in environment
-        self.n_states = states
+    def __init__(self, n_actions, n_features, name, Global_Net=None, isGlobal=False):
+        self.n_actions = n_actions #Number of discrete actions in environment
+        self.n_features = n_features
 
         if isGlobal:
             with tf.variable_scope(name):
-                self.s = tf.placeholder(tf.float32, [None, self.n_states], name='s')
+                self.s = tf.placeholder(tf.float32, [None, self.n_features], name='s')
 
                 if SHARED:
                     self.actor_output, self.critic_output, self.params = self.build_net(name)
@@ -36,7 +36,7 @@ class Brain(object):
             #Creating Local Nets
 
             with tf.variable_scope(name):
-                self.s = tf.placeholder(tf.float32, [None, self.n_states], name='s')
+                self.s = tf.placeholder(tf.float32, [None, self.n_features], name='s')
 
                 if SHARED:
                     self.actor_output, self.critic_output, self.params = self.build_net(name)
@@ -209,14 +209,15 @@ class Agent(object):
 
         self.name = name
         self.local_brain = Brain(
-            states=self.env.states.shape[1],
+            n_actions=self.env.num_actions(),
+            n_features=self.env.num_features(),
             name=self.name,
             Global_Net=global_network
         )
 
     def work(
         self, coord, session,
-        rew_threshold,  MAX_EPISODES=500):
+        reward_threshold,  MAX_EPISODES=500):
 
         steps = 1
         eps = 1
@@ -236,9 +237,11 @@ class Agent(object):
 
                 a = self.local_brain.choose_action(session, s)
 
-                s_, a, r, done = self.env.step(a)
+                s_, r, done = self.env.step(a)
 
                 eps_reward += r
+
+                # print('On action {}, received reward {}, total reward {}.'.format(a, r, eps_reward))
 
                 #Store the transition
                 memory_s.append(s)
@@ -273,13 +276,13 @@ class Agent(object):
                 steps += 1
 
                 if done:
-                    if self.env.portfolio.trade is not None:
-                        lastTime = self.env.data.index[self.env.curr_idx].to_pydatetime()
-                        lastOpen = self.env.data['Open'].iloc[self.env.curr_idx]
-                        self.env.portfolio.closeTrade(time=lastTime, open=lastOpen)
-
-                    #Use portfolio reward tracker for greater accuracy
-                    eps_reward = self.env.portfolio.total_reward
+                    # if self.env.portfolio.trade is not None:
+                    #     lastTime = self.env.data.index[self.env.curr_idx].to_pydatetime()
+                    #     lastOpen = self.env.data['Open'].iloc[self.env.curr_idx]
+                    #     self.env.portfolio.closeTrade(time=lastTime, open=lastOpen)
+                    #
+                    # #Use portfolio reward tracker for greater accuracy
+                    # eps_reward = self.env.portfolio.total_reward
 
                     print ("%s, Episode:%s, Reward: %s"%(self.name, eps, eps_reward))
 
@@ -288,7 +291,7 @@ class Agent(object):
                     eps += 1
 
                     #Stop the training once either reward or episode limit is reached
-                    reward_reached = np.mean(GLOBAL_REWARDS[-10:]) >= rew_threshold
+                    reward_reached = np.mean(GLOBAL_REWARDS[-10:]) >= reward_threshold
                     episode_reached = eps >= MAX_EPISODES
 
                     if reward_reached or episode_reached:
@@ -306,7 +309,8 @@ class A3CAgent(object):
 
         self.global_net = Brain(
             # self.env.observation_space,
-            self.env.states.shape[1],
+            n_actions=self.env.num_actions(),
+            n_features=self.env.num_features(),
             name='Global',
             isGlobal=True
         )
@@ -376,7 +380,7 @@ class A3CAgent(object):
 
             ACTION = self.global_net.choose_action(session, obs)
 
-            next_obs, _, _, DONE = self.env.step(ACTION)
+            next_obs, _, DONE = self.env.step(ACTION)
 
             obs = next_obs
 
