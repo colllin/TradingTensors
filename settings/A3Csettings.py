@@ -9,12 +9,17 @@ CRITIC_LAYER = [128]
 SHARED_LAYER = [128, 64]
 
 #Hyperparams
+<<<<<<< Updated upstream
 NUM_WORKERS = 8
 GAMMA = 0.99
+=======
+NUM_WORKERS = 4
+GAMMA = 0.9
+>>>>>>> Stashed changes
 LEARNING_RATE = 0.001
 
 #Regularization terms to control overfitting
 COEF_REG = 0.5
-L2_REG_LAMBDA = 0.6
+L2_REG_LAMBDA = 0.1
 
 UPDATE_FREQ = 50
