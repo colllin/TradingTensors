@@ -1,9 +1,17 @@
 import numpy as np
 import pandas as pd
-from settings.serverconfig import HISTORICAL_DATA_LENGTH, TRAIN_SPLIT
+from settings.serverconfig import HISTORICAL_DATA_LENGTH, TRAIN_SPLIT, WHALECLUB_TOKEN_DEMO
 from functions.utils import OandaHandler
 # from Fx import OANDA
 # from sklearn.model_selection import train_test_split
+from pywhaleclub import Client
+
+whaleclub = Client(WHALECLUB_TOKEN_DEMO)
+
+print(whaleclub.get_balance())
+print(whaleclub.list_positions('active'))
+print(whaleclub.get_markets(['BTC-USD']))
+
 
 # class Observation():
 #     def __init__(self,
@@ -74,7 +82,7 @@ def augment_ticker_history(history):
     # self.Dates = self.data.index.to_pydatetime().tolist()
 
 
-class OandaEnv():
+class WhaleclubEnv():
     def __init__(self,
                  instrument,
                  granularity,
@@ -83,14 +91,13 @@ class OandaEnv():
                  lookback_period=1,
                  mode='practice'):
 
-        self.oanda_api = OandaHandler(granularity, mode)
         self.training = training
         self.instrument = instrument
         self.lookback_period = lookback_period  # how many periods to lookback
         self.trade_fee_rate = trade_fee_rate
 
         # Pull primary symbol from Oanda API
-        history = self.oanda_api.get_history(self.instrument, HISTORICAL_DATA_LENGTH)
+        history = whaleclub.get_history(self.instrument, HISTORICAL_DATA_LENGTH)
         assert history is not None, "history is not DataFrame"
 
         self.volume_mean = np.mean(history.Volume)
@@ -101,7 +108,7 @@ class OandaEnv():
         self.train_history = history[:train_size]
         self.test_history = history[train_size:]
 
-        # self.instrument_precision = self.oanda_api.get_instrument_precision(instrument)
+        # self.instrument_precision = whaleclub.get_instrument_precision(instrument)
 
         #Reward: (CLOSE - open) / (0.0001)
         # self.reward_pips = (self.data['Close'] - self.data['Open']).values / self.instrument_precision
