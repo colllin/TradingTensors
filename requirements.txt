@@ -42,6 +42,7 @@ pyparsing==2.2.0
 pyswisseph==2.0.0.post2
 python-dateutil==2.6.1
 pytz==2017.3
+pywhaleclub==1.1
 pyzmq==16.0.3
 qtconsole==4.3.1
 requests==2.18.4

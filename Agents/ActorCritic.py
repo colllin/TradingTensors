@@ -241,7 +241,7 @@ class Agent(object):
 
                 eps_reward += r
 
-                # print('On action {}, received reward {}, total reward {}.'.format(a, r, eps_reward))
+                # print('On state {}, chose action {}, received reward {}, total reward {}.'.format(s, a, r, eps_reward))
 
                 #Store the transition
                 memory_s.append(s)
@@ -376,25 +376,28 @@ class A3CAgent(object):
         obs = self.env.reset(training=train)
         DONE = False
 
+        self.rewards = 0
+
         while not DONE:
 
             ACTION = self.global_net.choose_action(session, obs)
 
-            next_obs, _, DONE = self.env.step(ACTION)
+            next_obs, reward, DONE = self.env.step(ACTION)
+            self.rewards += reward
 
             obs = next_obs
 
-        if self.env.portfolio.trade is not None:
-            lastTime = self.env.data.index[self.env.curr_idx].to_pydatetime()
-            lastOpen = self.env.data['Open'].iloc[self.env.curr_idx]
-            self.env.portfolio.closeTrade(time=lastTime, open=lastOpen)
+        # if self.env.portfolio.trade is not None:
+        #     lastTime = self.env.data.index[self.env.curr_idx].to_pydatetime()
+        #     lastOpen = self.env.data['Open'].iloc[self.env.curr_idx]
+        #     self.env.portfolio.closeTrade(time=lastTime, open=lastOpen)
 
-        self.trades = self.env.portfolio.trades
-        self.avg_rewards = self.env.portfolio.total_reward / self.env.portfolio.total_trades
-        self.rewards =self.env.portfolio.total_reward
-        self.equity_curves = self.env.portfolio.equity_curve
+        self.trades = self.env.trades
+        self.avg_rewards = self.rewards / len(self.trades)
+        # self.equity_curves = self.env.portfolio.equity_curve
+        self.equity_curves = None
 
         self.summaryPlot()
 
     def summaryPlot(self):
-        ohlcPlot(self.trades, self.env.data, self.equity_curves)
+        ohlcPlot(self.trades, self.env.session_ticker[self.env.lookback_period:], self.equity_curves)

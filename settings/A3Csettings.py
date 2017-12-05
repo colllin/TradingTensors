@@ -10,7 +10,7 @@ SHARED_LAYER = [128, 64]
 
 #Hyperparams
 NUM_WORKERS = 4
-GAMMA = 0.9
+GAMMA = 2.0
 LEARNING_RATE = 0.001
 
 #Regularization terms to control overfitting

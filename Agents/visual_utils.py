@@ -33,80 +33,86 @@ def rewardPlot(record, best_models, type, top_n=3):
     plt.show()
 
 def ohlcPlot(trades, ohlc, equity_curve):
-    trades = pd.DataFrame([vars(f) for f in trades])
+    trades = pd.DataFrame(trades)
 
-    buys = trades.loc[trades.type=='BUY', :]
-    sells = trades.loc[trades.type=='SELL', :]
+    # "right" trade for instrument 'EUR_USD' means exchanging from EUR to USD.
+    lefts = trades.loc[trades.type=='LEFT', :]
+    rights = trades.loc[trades.type=='RIGHT', :]
     print ("Summary Statistics (Test)\n")
 
-    print ("Total Trades            | {}        (Buy){}       (Sell){} "\
-        .format(trades.shape[0], buys.shape[0], sells.shape[0]))
+    print ("Total Trades            | {}        (Buy Left){}       (Buy Right){} "\
+        .format(trades.shape[0], lefts.shape[0], rights.shape[0]))
 
     #Calculate Profit breakdown
     total_profit = trades.profit.sum()
-    buy_profit = buys.profit.sum()
-    sell_profit = sells.profit.sum()
+    left_profit = lefts.profit.sum()
+    right_profit = rights.profit.sum()
 
-    print ("Profit (in pips)        | %.2f   (Buy)%.2f   (Sell)%.2f"\
-        %(total_profit, buy_profit, sell_profit))
+    print ("Profit (return %%)        | %.4f   (Hold Left)%.4f   (Hold Right)%.4f"\
+        %(total_profit, left_profit, right_profit))
+
+    # Profit Opportunity
+    profit_opportunity = np.sum([abs(ohlc.Open[i]-ohlc.Open[i-1]) for i in range(1,len(ohlc)-1)])
+    # optimal_left_trades = [(ohlc.Open[i]-ohlc.Open[i-1]) for i in range(1,len(ohlc)-1)]
+    print ("Maximum Profit Opportunity  | %.4f"%(profit_opportunity))
 
     #Calculate Win Ratio
     total_percent = (trades.loc[trades.profit>0,'profit'].count()/ trades.shape[0]) * 100
-    buy_percent = (buys.loc[buys.profit>0, 'profit'].count()/buys.shape[0]) * 100
-    sell_percent = (sells.loc[sells.profit>0, 'profit'].count()/sells.shape[0]) * 100
-    print ("Win Ratio               | %.2f%%    (Buy)%.2f%%   (Sell)%.2f %%"%(total_percent, buy_percent, sell_percent))
+    left_percent = (lefts.loc[lefts.profit>0, 'profit'].count()/lefts.shape[0]) * 100
+    right_percent = (rights.loc[rights.profit>0, 'profit'].count()/rights.shape[0]) * 100
+    print ("Win Ratio               | %.2f%%    (Buy)%.2f%%   (Sell)%.2f %%"%(total_percent, left_percent, right_percent))
 
     #Duration
     duration = trades.duration.mean()
     print ("Average Trade Duration  | %.2f"%(duration))
 
-    #make OHLC ohlc matplotlib friendly
-    datetime_index = mdates.date2num(ohlc.index.to_pydatetime())
-
-    proper_feed = list(zip(
-        datetime_index,
-        ohlc.Open.tolist(),
-        ohlc.High.tolist(),
-        ohlc.Low.tolist(),
-        ohlc.Close.tolist()
-        ))
-
-    #actual PLotting
-    fig, (ax, ax2) = plt.subplots(2,1, figsize=CHART_SIZE)
-
-    ax.set_title('Action History', fontdict={'fontsize':20})
-
-    all_days= mdates.DayLocator()
-    ax.xaxis.set_major_locator(all_days)
-    ax.xaxis.set_major_formatter(mdates.DateFormatter('%d/%m'))
-
-    #Candlestick chart
-    mf.candlestick_ohlc(
-        ax,
-        proper_feed,
-        width=0.02,
-        colorup='green',
-        colordown='red'
-    )
-    #Buy indicator
-    ax.plot(
-        mdates.date2num([time for time in buys.entry_time]),
-        [price-0.001 for price in buys.entry_price],
-        'b^',
-        alpha=1.0
-    )
-    #Sell indicator
-    ax.plot(
-        mdates.date2num([time for time in sells.entry_time]),
-        [price+0.001 for price in sells.entry_price],
-        'rv',
-        alpha=1.0
-    )
-    #Secondary Plot
-    ax2.set_title("Equity")
-    ax2.plot(equity_curve)
-
-    for tick in ax.get_xticklabels():
-        tick.set_rotation(45)
-
-    plt.show()
+    # #make OHLC ohlc matplotlib friendly
+    # datetime_index = mdates.date2num(ohlc.index.to_pydatetime())
+    #
+    # proper_feed = list(zip(
+    #     datetime_index,
+    #     ohlc.Open.tolist(),
+    #     ohlc.High.tolist(),
+    #     ohlc.Low.tolist(),
+    #     ohlc.Close.tolist()
+    #     ))
+    #
+    # #actual PLotting
+    # fig, (ax, ax2) = plt.subplots(2,1, figsize=CHART_SIZE)
+    #
+    # ax.set_title('Action History', fontdict={'fontsize':20})
+    #
+    # all_days= mdates.DayLocator()
+    # ax.xaxis.set_major_locator(all_days)
+    # ax.xaxis.set_major_formatter(mdates.DateFormatter('%d/%m'))
+    #
+    # #Candlestick chart
+    # mf.candlestick_ohlc(
+    #     ax,
+    #     proper_feed,
+    #     width=0.02,
+    #     colorup='green',
+    #     colordown='red'
+    # )
+    # #Buy indicator
+    # ax.plot(
+    #     mdates.date2num([time for time in lefts.entry_time]),
+    #     [price-0.001 for price in lefts.entry_price],
+    #     'b^',
+    #     alpha=1.0
+    # )
+    # #Sell indicator
+    # ax.plot(
+    #     mdates.date2num([time for time in rights.entry_time]),
+    #     [price+0.001 for price in rights.entry_price],
+    #     'rv',
+    #     alpha=1.0
+    # )
+    # #Secondary Plot
+    # ax2.set_title("Equity")
+    # # ax2.plot(equity_curve)
+    #
+    # for tick in ax.get_xticklabels():
+    #     tick.set_rotation(45)
+    #
+    # plt.show()

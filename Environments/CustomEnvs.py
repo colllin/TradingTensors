@@ -4,13 +4,12 @@ from settings.serverconfig import HISTORICAL_DATA_LENGTH, TRAIN_SPLIT, WHALECLUB
 from functions.utils import OandaHandler
 # from Fx import OANDA
 # from sklearn.model_selection import train_test_split
-from pywhaleclub import Client
+# from pywhaleclub import Client
 
-whaleclub = Client(WHALECLUB_TOKEN_DEMO)
-
-print(whaleclub.get_balance())
-print(whaleclub.list_positions('active'))
-print(whaleclub.get_markets(['BTC-USD']))
+# whaleclub = Client(WHALECLUB_TOKEN_DEMO)
+# print(whaleclub.get_balance())
+# print(whaleclub.list_positions('active'))
+# print(whaleclub.get_markets(['BTC-USD']))
 
 
 # class Observation():
@@ -82,7 +81,7 @@ def augment_ticker_history(history):
     # self.Dates = self.data.index.to_pydatetime().tolist()
 
 
-class WhaleclubEnv():
+class OandaEnv():
     def __init__(self,
                  instrument,
                  granularity,
@@ -91,13 +90,14 @@ class WhaleclubEnv():
                  lookback_period=1,
                  mode='practice'):
 
+        self.oanda_api = OandaHandler(granularity=granularity, mode=mode)
         self.training = training
         self.instrument = instrument
         self.lookback_period = lookback_period  # how many periods to lookback
         self.trade_fee_rate = trade_fee_rate
 
         # Pull primary symbol from Oanda API
-        history = whaleclub.get_history(self.instrument, HISTORICAL_DATA_LENGTH)
+        history = self.oanda_api.get_history(self.instrument, HISTORICAL_DATA_LENGTH)
         assert history is not None, "history is not DataFrame"
 
         self.volume_mean = np.mean(history.Volume)
@@ -108,7 +108,7 @@ class WhaleclubEnv():
         self.train_history = history[:train_size]
         self.test_history = history[train_size:]
 
-        # self.instrument_precision = whaleclub.get_instrument_precision(instrument)
+        # self.instrument_precision = self.oanda_api.get_instrument_precision(instrument)
 
         #Reward: (CLOSE - open) / (0.0001)
         # self.reward_pips = (self.data['Close'] - self.data['Open']).values / self.instrument_precision
@@ -126,7 +126,7 @@ class WhaleclubEnv():
         # A session frame is considered to be in the middle of a candle which has opened but not closed.
         # So we can only report on the opening of the current frame's candle, but not the close.
         returns = self.get_returns(session_index, num_candles=self.lookback_period)
-        # volumes = [self.session_ticker.Volume[session_index-i-1] for i in range(self.lookback_period)]
+        # volumes = np.array([self.session_ticker.Volume[session_index-i-1] for i in range(self.lookback_period)])
         # volumes = (volumes - self.volume_mean) / self.volume_std
         one_hot_held_currency = [0, 0]
         one_hot_held_currency[self.held_currency] = 1
@@ -135,17 +135,19 @@ class WhaleclubEnv():
     def get_returns(self, session_index, num_candles=1):
         ticker = self.session_ticker
         now = session_index
-        return [(ticker.Open[now-lookback] - ticker.Open[now-lookback-1]) / ticker.Open[now-lookback-1] for lookback in range(num_candles)]
+        return np.array([(ticker.Open[now-lookback] - ticker.Open[now-lookback-1]) / ticker.Open[now-lookback-1] for lookback in range(num_candles)])
 
     def step(self, action):
         # Steps you to the next session frame.
+
+        # Our reward will be a return percentage (1 = 100% return, -1 = -100% return).
         reward = 0
 
         # 1 - Perform action
-        if self.held_currency != action:
+        if action != self.held_currency:
             # "Pay" trade_fee_rate, update held currency
             reward -= self.trade_fee_rate
-            self.held_currency = action
+            self.trade()
 
         # 2 - Update session index
         self.session_index += 1
@@ -156,15 +158,16 @@ class WhaleclubEnv():
         # 4 - Calculate reward
         # The return is in terms of the first currency listed in the instrument.
         # If the ticker goes up, the first currency became more valuable compared to the second.
-        return_multiplier = 1.0 if self.held_currency is 0 else -1.0
+        return_multiplier = 1.0 if self.held_currency == 0 else -1.0
         current_return = self.get_returns(self.session_index)[0]
         reward += return_multiplier * current_return
+        self.hold(reward)
 
         # 5 - Calculate whether this is the last step
         last_tick = len(self.session_ticker)-1
         done = self.session_index >= last_tick
 
-        return next_observation, 100*reward, done
+        return next_observation, reward, done
 
         # reward = self.reward_pips[self.curr_idx] #Current Reward: Current Close - Close Open
         # THIS_OPEN = self.data['Open'][self.curr_idx] #Current Open
@@ -192,9 +195,28 @@ class WhaleclubEnv():
 
         # TODO: Consider selecting held_currency at random
         self.held_currency = 0
+        self.reset_trade()
+
+        self.trades = []
 
         #Return the first instance of the state space
         return self.get_observation(self.session_index)
+
+    def reset_trade(self):
+        self.current_trade = {
+            'type': 'LEFT' if self.held_currency == 0 else 'RIGHT',
+            'duration': 0,
+            'profit': 0
+        }
+        self.trades.append(self.current_trade)
+
+    def trade(self):
+        self.held_currency = 0 if self.held_currency == 1 else 1
+        self.reset_trade()
+
+    def hold(self, profit):
+        self.current_trade['duration'] += 1
+        self.current_trade['profit'] += profit
 
 
 # class Trade():
